@@ -5,9 +5,10 @@ Rain runs the DSP of Mutable Instruments **Beads** (MIT licensed), so it records
 freezes, scatters and re-pitches audio the way the module does.
 
 **Status: Phase 1.** The full Beads signal path is ported: grains, delay mode,
-feedback, reverb, freeze and all four quality modes. The plugin uses JUCE's generic
-editor until the night-sky UI lands. See [docs/DESIGN.md](docs/DESIGN.md) for every
-control.
+feedback, reverb, freeze and all four quality modes, with a night-sky front panel
+in the style of Overcast. See [docs/DESIGN.md](docs/DESIGN.md) for every control.
+
+![Rain's front panel](docs/panel.png)
 
 ## Download
 
@@ -46,6 +47,8 @@ To work in Xcode: `cmake -S . -B build-xcode -G Xcode`.
 ```
 source/
   PluginProcessor.*   audio callback, parameter tree, state save/load
+  PluginEditor.*      the night-sky front panel (1170 x 760 design, scales with the window)
+  ui/                 look and feel, knobs, animated sky, embedded fonts
   Parameters.*        parameter IDs and ranges (IDs must never change)
   dsp/                plain C++ DSP with no JUCE dependency
     RainEngine.*      runs Beads at its own rate inside the host, maps the controls
@@ -53,6 +56,7 @@ source/
     Resampler.h       streaming cubic resampler for host rate <-> Beads rate
     Blocks.h          filters and smoothers shared with Overcast
 third_party/mutable/  Beads and stmlib, unchanged from upstream (MIT)
+resources/fonts/      Cormorant Garamond and Jost (SIL Open Font License)
 tests/                Catch2 tests for the DSP
 docs/DESIGN.md        what every control does
 ```

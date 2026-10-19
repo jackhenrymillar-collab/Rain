@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 
 namespace rain
 {
@@ -107,8 +108,7 @@ void RainProcessor::handleAsyncUpdate()
 
 juce::AudioProcessorEditor* RainProcessor::createEditor()
 {
-    // Phase 1 uses the generic editor. The night-sky UI comes later.
-    return new juce::GenericAudioProcessorEditor (*this);
+    return new RainEditor (*this);
 }
 
 void RainProcessor::getStateInformation (juce::MemoryBlock& destData)

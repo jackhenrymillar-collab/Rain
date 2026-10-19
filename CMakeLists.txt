@@ -89,7 +89,18 @@ if(RAIN_BUILD_PLUGIN)
 
     target_sources(Rain PRIVATE
         source/PluginProcessor.cpp
-        source/Parameters.cpp)
+        source/PluginEditor.cpp
+        source/Parameters.cpp
+        source/ui/Components.cpp
+        source/ui/Theme.cpp)
+
+    # Cormorant Garamond and Jost, SIL Open Font License (see resources/fonts).
+    juce_add_binary_data(RainFonts SOURCES
+        resources/fonts/CormorantGaramond-Medium.ttf
+        resources/fonts/CormorantGaramond-SemiBold.ttf
+        resources/fonts/Jost-Regular.ttf
+        resources/fonts/Jost-Medium.ttf)
+    set_target_properties(RainFonts PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     target_compile_definitions(Rain PUBLIC
         JUCE_WEB_BROWSER=0
@@ -100,6 +111,7 @@ if(RAIN_BUILD_PLUGIN)
     target_link_libraries(Rain
         PRIVATE
             rain_dsp
+            RainFonts
             juce::juce_audio_utils
             juce::juce_dsp
         PUBLIC

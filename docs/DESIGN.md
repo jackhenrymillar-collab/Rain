@@ -68,7 +68,8 @@ reported to the host.
 
 ## Front panel
 
-The mockup is at <https://claude.ai/artifact/RHF73eDwpbg3wDwLzexysG>. It follows
+Built in `source/PluginEditor.cpp` and `source/ui/`. Presets, A/B and Save from the
+mockup are not built yet; the preset bar shows "Init" for now. The mockup is at <https://claude.ai/artifact/RHF73eDwpbg3wDwLzexysG>. It follows
 Overcast's night-sky style: serif wordmark with a raindrop, preset bar with A/B and
 Save, glowing navy knobs (Time, Size, Shape, Pitch, Density, Feedback, Reverb,
 Dry/Wet), four small Random knobs, Input and Output, Quality chips that change the big
