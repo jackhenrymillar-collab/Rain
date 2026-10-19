@@ -8,8 +8,13 @@ published at <https://github.com/pichenettes/eurorack>.
 | `beads/dsp/`, `beads/resources.*` | `pichenettes/eurorack`, `beads/` | latest `master` on 2026-10-19 |
 | `stmlib/dsp/`, `stmlib/utils/`, `stmlib/stmlib.h` | `pichenettes/stmlib` | `e3bd7c9` (the eurorack submodule pin) |
 
-The files are unchanged from upstream, except that Beads' wavetable synth mode
-(`synth.*`, `wavetable_*.h`) is left out because Rain does not use it.
+The files are unchanged from upstream, except that:
+
+- Beads' wavetable synth mode (`synth.*`, `wavetable_*.h`) is left out because Rain
+  does not use it.
+- `beads/dsp/grain_envelope.h` reads its minimum grain attack from
+  `BEADS_MIN_ATTACK_SECONDS` (default 0.5 ms, as upstream). Rain sets 1.5 ms in
+  `CMakeLists.txt` so square and very short grains don't pop on low notes.
 
 ## License
 

@@ -7,12 +7,32 @@ it is marked **Rain**.
 
 ## Signal path
 
-Input gain → recording buffer (with feedback) → grains (or delay taps) → dry/wet →
-tape wow and flutter (Dirty Tape only) → limiter → reverb → limiter → output gain.
+6 dB pad → input gain → recording buffer (with feedback) → grains (or delay taps) →
+dry/wet → tape wow and flutter (Dirty Tape only) → limiter → reverb → limiter →
+6 dB make-up → sub-sonic filter → output gain → look-ahead limiter.
+
+**Rain** level handling:
+
+- **Headroom.** Audio enters Beads 6 dB down, about where a typical Eurorack signal
+  sits against the module's input range, and comes back up by the same amount. Host
+  audio at full scale therefore never clips inside Beads' buffer.
+- **Sub-sonic filter.** A 12 Hz high-pass removes the DC and sub-sonic thumps that
+  cutting low notes into short grains produces.
+- **Look-ahead limiter.** Stereo-linked, 1.5 ms look-ahead, 80 ms release, ceiling
+  -0.2 dBFS. It ramps the gain down ahead of a peak instead of clipping it, so loud
+  grains and feedback don't crackle. Below the ceiling it does nothing.
+- **Knob smoothing.** Every knob glides like the module's pot readers (a one-pole
+  filter at the 4 kHz block rate, about 5 ms), so automation and preset changes don't
+  step.
+- **Grain attack.** The shortest grain attack is 1.5 ms (the module's is 0.5 ms),
+  which stops square and very short grains popping on low notes.
 
 Beads runs at a fixed rate per quality mode (24, 32 or 48 kHz). Rain converts the
-host's audio to that rate and back (`RainEngine`), processing in the module's own
-blocks of rate ÷ 4000 frames. This adds about 20 to 40 samples of latency, which is
+host's audio to that rate and back (`RainEngine`, `Resampler`) with a polyphase
+windowed-sinc converter (Kaiser window, about 100 dB stopband, flat to 19 kHz at
+44.1 kHz), the same class of converter used in mastering tools. When the host runs
+at Beads' rate, audio passes straight through. Processing runs in the module's own
+blocks of rate ÷ 4000 frames. Latency is 1.5 to 6 ms depending on the rates, and is
 reported to the host.
 
 ## Mode (Rain)

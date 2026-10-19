@@ -70,7 +70,7 @@ TEST_CASE ("Beads runs at its own rate for each quality")
         e.setParams (p);
         CHECK (e.internalRate() == expected[q]);
         CHECK (e.latencySamples() > 0);
-        CHECK (e.latencySamples() < 64);
+        CHECK (e.latencySamples() < 441); // under 10 ms
     }
 }
 
@@ -191,4 +191,50 @@ TEST_CASE ("Attenuverter law has a dead zone and reaches full scale")
     CHECK (RainEngine::attenuverterLaw (0.05f) == 0.0f);
     CHECK (RainEngine::attenuverterLaw (1.0f) == Catch::Approx (1.0f));
     CHECK (RainEngine::attenuverterLaw (-1.0f) == Catch::Approx (-1.0f));
+}
+
+TEST_CASE ("Hot input stays below full scale and the low end stays clean")
+{
+    // Bass at full scale through a dense, fully wet cloud: the output must stay under
+    // the limiter's ceiling, and almost nothing above 2 kHz may appear (that would be
+    // clipping or clicks; the input itself has nothing up there).
+    const double fs = 44100.0;
+    RainEngine e;
+    RainParams p;
+    p.dryWet = 1.0f;
+    p.reverb = 0.0f;
+    p.size = 0.65f;
+    p.shape = 0.6f;
+    p.density = 0.9f;
+    e.setParams (p);
+    e.prepare (fs, 256);
+
+    const auto n = static_cast<std::size_t> (fs * 6.0);
+    std::vector<float> l (n), r (n);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const double t = static_cast<double> (i) / fs;
+        l[i] = r[i] = static_cast<float> (0.65 * std::sin (2.0 * 3.141592653589793 * 55.0 * t)
+                                        + 0.35 * std::sin (2.0 * 3.141592653589793 * 82.4 * t));
+    }
+    run (e, l, r);
+    REQUIRE (allFinite (l));
+
+    Biquad hp[3];
+    for (auto& f : hp)
+        f.setHighpass (2000.0f, fs);
+    double high = 0.0, total = 0.0;
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const float h = hp[2].process (hp[1].process (hp[0].process (l[i])));
+        if (i > n / 3)
+        {
+            high += static_cast<double> (h) * h;
+            total += static_cast<double> (l[i]) * l[i];
+            peak = std::max (peak, std::fabs (l[i]));
+        }
+    }
+    CHECK (peak <= 0.977f);
+    CHECK (10.0 * std::log10 (high / total) < -60.0);
 }

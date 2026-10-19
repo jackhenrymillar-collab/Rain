@@ -72,14 +72,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     };
 
     percent (ParamID::time, "Time", 50.0f);
-    percent (ParamID::size, "Size", 50.0f);
-    percent (ParamID::shape, "Shape", 50.0f);
+    // Defaults give a smooth cloud: overlapping ~140 ms grains with soft edges.
+    percent (ParamID::size, "Size", 65.0f);
+    percent (ParamID::shape, "Shape", 60.0f);
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::pitch, v }, "Pitch", Range { -24.0f, 24.0f, 0.01f }, 0.0f, withLabel ("st", 1)));
     bipolar (ParamID::timeRandom, "Time Random");
     bipolar (ParamID::sizeRandom, "Size Random");
     bipolar (ParamID::shapeRandom, "Shape Random");
     bipolar (ParamID::pitchRandom, "Pitch Random");
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::density, v }, "Density", Range { 0.0f, 100.0f, 0.1f }, 70.0f, densityText()));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::density, v }, "Density", Range { 0.0f, 100.0f, 0.1f }, 82.0f, densityText()));
     percent (ParamID::feedback, "Feedback", 0.0f);
     percent (ParamID::dryWet, "Dry/Wet", 50.0f);
     percent (ParamID::reverb, "Reverb", 30.0f);

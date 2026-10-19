@@ -31,7 +31,18 @@ namespace
     // Beads' mix pots are read with a little headroom so fully clockwise really is 1.
     float mixPot (float v) { return std::clamp (v * 1.005f, 0.0f, 1.0f); }
 
-    float lowpass (Biquad (&f)[2], float x) { return f[1].process (f[0].process (x)); }
+    // Headroom inside Beads (see RainEngine.h).
+    constexpr float kHeadroom = 0.5f;
+
+    constexpr float kBeadsRates[] = { 24000.0f, 32000.0f, 48000.0f };
+
+    int rateIndex (float rate)
+    {
+        return rate < 28000.0f ? 0 : rate < 40000.0f ? 1 : 2;
+    }
+
+    // The module's pot filter: ONE_POLE with 0.05 at its 4 kHz block rate.
+    constexpr float kKnobSmoothing = 0.05f;
 }
 
 RainEngine::RainEngine() = default;
@@ -79,6 +90,15 @@ void RainEngine::prepare (double sampleRate, int /*maxBlockSize*/)
         processor->Init (buffers, reverbBuffer.data());
     }
 
+    for (int i = 0; i < kNumRates; ++i)
+    {
+        toBeadsAt[static_cast<size_t> (i)].prepare (fs, kBeadsRates[i]);
+        fromBeadsAt[static_cast<size_t> (i)].prepare (kBeadsRates[i], fs);
+    }
+    subsonic.prepare (fs);
+    limiter.prepare (fs, 0.977f); // -0.2 dBFS
+    smoothedValid = false;
+
     fifo.assign (kFifoSize, beads::FloatFrame { 0.0f, 0.0f });
     outputGain.prepare (fs, 20.0f);
     outputGain.snapTo (std::pow (10.0f, params.outputGainDb / 20.0f));
@@ -98,6 +118,9 @@ void RainEngine::reset()
     std::fill (block2.begin(), block2.end(), std::uint8_t { 0 });
     std::fill (reverbBuffer.begin(), reverbBuffer.end(), std::uint16_t { 0 });
     outputGain.snapTo (outputGain.getTarget());
+    subsonic.reset();
+    limiter.reset();
+    smoothedValid = false;
     wave.reset();
     drift.reset();
     for (auto& l : mon.levels)
@@ -113,25 +136,11 @@ void RainEngine::configure (Quality q)
     beadsRate = processor->sample_rate();
     beadsBlock = std::clamp (static_cast<int> (beadsRate / 4000.0f), 1, kMaxBeadsBlock);
 
-    toBeads.setRates (fs, beadsRate);
-    fromBeads.setRates (beadsRate, fs);
-
-    // Band-limit around the rate conversion: before going down to Beads' rate, and
-    // after coming back up from it.
-    const auto br = static_cast<double> (beadsRate);
-    lpIn = br < fs;
-    lpOutPre = fs < br;
-    lpOutPost = fs > br;
-    for (int ch = 0; ch < 2; ++ch)
-        for (int s = 0; s < 2; ++s)
-        {
-            inLp[ch][s].setLowpass (0.45f * beadsRate, fs);
-            outPreLp[ch][s].setLowpass (static_cast<float> (0.45 * fs), br);
-            outPostLp[ch][s].setLowpass (0.45f * beadsRate, fs);
-            inLp[ch][s].reset();
-            outPreLp[ch][s].reset();
-            outPostLp[ch][s].reset();
-        }
+    const auto r = static_cast<size_t> (rateIndex (beadsRate));
+    toBeads = &toBeadsAt[r];
+    fromBeads = &fromBeadsAt[r];
+    toBeads->reset();
+    fromBeads->reset();
 
     const auto clipping = q == Quality::dirtyTape ? InputGain::SoftClipping::on
                         : q == Quality::cleanTape ? InputGain::SoftClipping::dynamic
@@ -142,13 +151,13 @@ void RainEngine::configure (Quality q)
     beadsFill = 0;
 
     // Prime the output FIFO so a full Beads block can always be produced in time.
-    const double hostPerBeads = fs / br;
+    const double hostPerBeads = fs / static_cast<double> (beadsRate);
     const int prime = static_cast<int> (std::ceil (beadsBlock * hostPerBeads)) + 4;
     fifoRead = fifoWrite = 0;
     for (int i = 0; i < prime; ++i)
         pushOutput (beads::FloatFrame { 0.0f, 0.0f });
 
-    latency = prime + Resampler::kDelay + static_cast<int> (std::ceil (Resampler::kDelay * hostPerBeads));
+    latency = prime + static_cast<int> (std::lround (toBeads->delay() + fromBeads->delay() * hostPerBeads)) + limiter.latency();
 }
 
 void RainEngine::setParams (const RainParams& p)
@@ -230,7 +239,23 @@ void RainEngine::runBeadsBlock()
         }
     }
 
+    // Smooth the knobs like the module's pot readers, so host automation and preset
+    // changes glide instead of stepping.
+    if (! smoothedValid)
+    {
+        smoothed = params;
+        smoothedValid = true;
+    }
     RainParams q = params;
+    for (auto [target, state] : { std::pair { &q.time, &smoothed.time }, { &q.size, &smoothed.size }, { &q.shape, &smoothed.shape },
+                                  { &q.density, &smoothed.density }, { &q.pitchSemis, &smoothed.pitchSemis },
+                                  { &q.timeRandom, &smoothed.timeRandom }, { &q.sizeRandom, &smoothed.sizeRandom },
+                                  { &q.shapeRandom, &smoothed.shapeRandom }, { &q.pitchRandom, &smoothed.pitchRandom },
+                                  { &q.feedback, &smoothed.feedback }, { &q.dryWet, &smoothed.dryWet }, { &q.reverb, &smoothed.reverb } })
+    {
+        *state += kKnobSmoothing * (*target - *state);
+        *target = *state;
+    }
     applyMotion (q, static_cast<float> (n) / beadsRate);
 
     beads::Parameters p;
@@ -302,22 +327,11 @@ void RainEngine::runBeadsBlock()
 
     for (std::size_t i = 0; i < n; ++i)
     {
+        // Beads' own output stage clamps to its converter's range.
         beads::FloatFrame f = beadsOut[i];
-        f.l = std::clamp (f.l, -1.0f, 1.0f);
-        f.r = std::clamp (f.r, -1.0f, 1.0f);
-        if (lpOutPre)
-        {
-            f.l = lowpass (outPreLp[0], f.l);
-            f.r = lowpass (outPreLp[1], f.r);
-        }
-        fromBeads.push (f, [this] (beads::FloatFrame g) {
-            if (lpOutPost)
-            {
-                g.l = lowpass (outPostLp[0], g.l);
-                g.r = lowpass (outPostLp[1], g.r);
-            }
-            pushOutput (g);
-        });
+        f.l = std::clamp (f.l, -1.0f, 1.0f) / kHeadroom;
+        f.r = std::clamp (f.r, -1.0f, 1.0f) / kHeadroom;
+        fromBeads->push (f, [this] (const beads::FloatFrame& g) { pushOutput (g); });
     }
 }
 
@@ -328,14 +342,9 @@ void RainEngine::process (float* left, float* right, int numSamples)
 
     for (int i = 0; i < numSamples; ++i)
     {
-        beads::FloatFrame x { left[i], right[i] };
-        if (lpIn)
-        {
-            x.l = lowpass (inLp[0], x.l);
-            x.r = lowpass (inLp[1], x.r);
-        }
+        const beads::FloatFrame x { left[i] * kHeadroom, right[i] * kHeadroom };
         beatPos += bpm / (60.0 * fs);
-        toBeads.push (x, [this] (const beads::FloatFrame& f) {
+        toBeads->push (x, [this] (const beads::FloatFrame& f) {
             beadsBeat[static_cast<std::size_t> (beadsFill)] = beatPos;
             beadsIn[static_cast<std::size_t> (beadsFill++)] = f;
             if (beadsFill == beadsBlock)
@@ -352,8 +361,11 @@ void RainEngine::process (float* left, float* right, int numSamples)
             fifoRead = (fifoRead + 1) & (kFifoSize - 1);
         }
         const float g = outputGain.next();
-        left[i] = softLimit (y.l * g, 0.95f);
-        right[i] = softLimit (y.r * g, 0.95f);
+        float l = subsonic.process (y.l, 0) * g;
+        float r = subsonic.process (y.r, 1) * g;
+        limiter.process (l, r);
+        left[i] = l;
+        right[i] = r;
     }
 
     mon.bpm.store (static_cast<float> (bpm), std::memory_order_relaxed);

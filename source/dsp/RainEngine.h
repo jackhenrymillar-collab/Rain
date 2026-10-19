@@ -3,6 +3,7 @@
 #include "Blocks.h"
 #include "InputGain.h"
 #include "Motion.h"
+#include "OutputStage.h"
 #include "Resampler.h"
 
 #include <array>
@@ -108,6 +109,11 @@ struct EngineMonitor
 // converted from the host rate into Beads' rate and back again, in Beads' own small
 // blocks (sample rate / 4000 frames, as on the module). This adds a few samples of
 // latency, reported by latencySamples(). Nothing allocates after prepare().
+//
+// Levels: audio enters Beads 6 dB down, like a typical Eurorack level against the
+// module's +/-10 V input range, so full-scale host audio never clips inside it; the
+// output is brought back up by the same amount. A sub-sonic filter and a look-ahead
+// limiter (ceiling -0.2 dBFS) finish the output.
 class RainEngine
 {
 public:
@@ -155,9 +161,20 @@ private:
     std::vector<std::uint16_t> reverbBuffer;
 
     InputGain inputGain;
-    Resampler toBeads, fromBeads;
-    Biquad inLp[2][2], outPreLp[2][2], outPostLp[2][2];
-    bool lpIn = false, lpOutPre = false, lpOutPost = false;
+
+    // One converter pair per Beads rate (24, 32 and 48 kHz), built in prepare() so
+    // switching quality on the audio thread never allocates.
+    static constexpr int kNumRates = 3;
+    std::array<Resampler, kNumRates> toBeadsAt, fromBeadsAt;
+    Resampler* toBeads = nullptr;
+    Resampler* fromBeads = nullptr;
+
+    SubsonicFilter subsonic;
+    Limiter limiter;
+
+    // Knob smoothing, as the module's pot readers do (one-pole at the block rate).
+    RainParams smoothed;
+    bool smoothedValid = false;
 
     std::array<beads::FloatFrame, kMaxBeadsBlock> beadsIn {}, beadsOut {};
     int beadsFill = 0;

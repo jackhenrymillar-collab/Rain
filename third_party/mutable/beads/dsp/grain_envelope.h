@@ -33,6 +33,11 @@
 
 #include <algorithm>
 
+// Rain: the shortest grain attack is configurable (the module uses 0.5 ms).
+#ifndef BEADS_MIN_ATTACK_SECONDS
+#define BEADS_MIN_ATTACK_SECONDS 0.0005f
+#endif
+
 namespace beads {
 
 class GrainEnvelope {
@@ -49,7 +54,7 @@ class GrainEnvelope {
     phase_increment_[STAGE_DONE] = 0.0f;
     smoothness_ = 0.0f;
     
-    min_attack_ = 0.0005f * sample_rate;
+    min_attack_ = BEADS_MIN_ATTACK_SECONDS * sample_rate;
     min_release_ = 0.010f * sample_rate;
   }
 

@@ -192,6 +192,9 @@ OrbKnob::OrbKnob (AudioProcessorValueTreeState& state, const String& paramID, co
     slider.setMouseDragSensitivity (220);
     slider.setTitle (name);
     slider.onValueChange = [this] { updateValueText(); };
+    // The orb's soft shadow is costly to draw; cache it, since the falling rain
+    // behind repaints the panel every frame.
+    slider.setBufferedToImage (true);
     addAndMakeVisible (slider);
 
     nameLabel.setText (name, dontSendNotification);
