@@ -47,7 +47,9 @@ reported to the host.
 | Control | Range | What it does |
 | --- | --- | --- |
 | **Time** | 0 to 100% | Where in the buffer new grains start. Left is the most recent audio, right is the oldest. |
-| **Size** | 0 to 100% | Grain length and direction. Left of about 1/3, grains play **backwards**: fully left they are long (up to 4 s), getting shorter towards 1/3. Right of 1/3 they play forwards, getting longer again towards the right. Not used in Delay mode. |
+| **Size** | 0 to 100% | Grain length, 8 ms to about 3 s. **Rain:** forward lengths only, since direction has its own control (Reverse); on the module the left third of SIZE plays every grain backwards. With **Overlap** on, Size sets how many grains overlap instead (1× to 8×). Not used in Delay mode. |
+| **Overlap** | on/off | **Rain:** grain length follows the grain rate (Density, and the tempo when synced), so a set number of grains always crossfade into each other and the cloud has no gaps. |
+| **Reverse** | 0 to 100% | **Rain:** the chance each grain plays backwards. 50% mixes swells and forward grains; 100% is fully backwards. Not used in Delay mode. |
 | **Shape** | 0 to 100% | Grain envelope: square at the left, a sharp attack with a decay at 1/3, a smooth bell around 2/3, and reversed (slow swell, sharp end) at the right. |
 | **Pitch** | −24 to +24 st | Grain playback pitch. **Rain:** continuous; on the module the knob snaps to 0, 1, 3, 4, 7, 12 and 24 semitones. |
 | **Random** (×4) | −100 to +100% | The small knobs under Time, Size, Shape and Pitch. On Beads these are attenuverters; with nothing patched they set randomness. Clockwise: a new random value for every grain. Counter-clockwise: the value jumps only occasionally. Centre: off. |
@@ -60,6 +62,7 @@ reported to the host.
 | **Feedback** | 0 to 100% | How much of the grain output is recorded back into the buffer. Soft-limited, so it can run hot. |
 | **Dry/Wet** | 0 to 100% | Beads' crossfade law (dry 0.75×, wet 1.5× at the extremes). |
 | **Reverb** | 0 to 100% | Amount and decay together. The reverb sits after the dry/wet mix, so it also works on the dry signal. |
+| **Soften** | 0 to 100% | **Rain:** darkens and warms the grains only: light saturation, then a 12 dB/octave low-pass from 16 kHz down to about 2.5 kHz. Default 25%. |
 
 ## Buttons
 
@@ -100,11 +103,13 @@ Snaps grain pitch to a scale: Chromatic, Major, Minor, Pentatonic, Minor Pentato
 Fifths or Octaves, with the unshifted input as the root. It applies after Pitch
 Random and modulation, so random pitch spreads and pitch modulation stay in key. To
 do this Rain draws the per-grain random pitch itself (the same law as Beads) and
-hands Beads the snapped value.
+hands Beads the snapped value. Random notes are drawn in proportion to how consonant
+they are against the root (root and octaves, then the fifth, the thirds, the fourth
+and sixth, then the rest), so random clouds lean towards open intervals.
 
 ## Presets (Rain)
 
-19 factory presets, plus your own. Click the preset name for the list, the arrows
+22 factory presets, plus your own. Click the preset name for the list, the arrows
 to step through, and Save to store the current sound. User presets are XML files
 in `~/Library/Audio/Presets/Overcast Audio/Rain`. A gold dot by the name means the
 sound has been edited since the preset was loaded. Presets leave Freeze, Seed,

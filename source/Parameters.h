@@ -37,6 +37,9 @@ namespace ParamID
     inline constexpr auto mod2Rate    = "mod2rate";
     inline constexpr auto mod2Depth   = "mod2depth";
     inline constexpr auto mod2Target  = "mod2target";
+    inline constexpr auto overlap     = "overlap";
+    inline constexpr auto reverse     = "reverse";
+    inline constexpr auto soften      = "soften";
 }
 
 // In front-panel order. Must match dsp::Quality.

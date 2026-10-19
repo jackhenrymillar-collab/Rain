@@ -1,6 +1,7 @@
 #include "Parameters.h"
 
 #include "dsp/Motion.h"
+#include "dsp/RainEngine.h"
 
 namespace rain
 {
@@ -73,7 +74,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
     percent (ParamID::time, "Time", 50.0f);
     // Defaults give a smooth cloud: overlapping ~140 ms grains with soft edges.
-    percent (ParamID::size, "Size", 65.0f);
+    // SIZE is a grain length, or in Overlap mode how many grains overlap.
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::size, v }, "Size", Range { 0.0f, 100.0f, 0.1f }, 49.0f,
+        AudioParameterFloatAttributes().withStringFromValueFunction ([] (float x, int) {
+            const float s = dsp::RainEngine::grainSeconds (dsp::RainEngine::beadsSize (x * 0.01f));
+            return s < 1.0f ? String (roundToInt (s * 1000.0f)) + " ms" : String (s, 2) + " s";
+        })));
     percent (ParamID::shape, "Shape", 60.0f);
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::pitch, v }, "Pitch", Range { -24.0f, 24.0f, 0.01f }, 0.0f, withLabel ("st", 1)));
     bipolar (ParamID::timeRandom, "Time Random");
@@ -96,6 +102,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::sync, v }, "Tempo Sync", false));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::syncRate, v }, "Sync Rate", syncRateNames(), 2));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::scale, v }, "Scale", scaleNames(), 0));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::overlap, v }, "Overlap", false));
+    percent (ParamID::reverse, "Reverse", 0.0f);
+    percent (ParamID::soften, "Soften", 25.0f);
 
     // Modulator rates: 0.01 to 10 Hz, skewed so slow rates get most of the knob.
     auto rateRange = Range { 0.01f, 10.0f, 0.0f, 0.3f };

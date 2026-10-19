@@ -50,6 +50,9 @@ struct Parameters {
   RandomizedParameter shape;
   RandomizedParameter pitch;
   bool monophonic_mode;
+  // Rain: chance (0 to 1) that each grain plays backwards. Negative keeps the
+  // module's behaviour, where SIZE left of 9 o'clock reverses every grain.
+  float reverse_probability = -1.0f;
 };
 
 template<typename T, int num_grains>

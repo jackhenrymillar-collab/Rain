@@ -67,6 +67,8 @@ class Processor {
     float dry_wet;
     float reverb_amount;
     bool output_gate;
+    // Rain: 0 to 1, darkens and warms the grains (not the dry signal).
+    float soften = 0.0f;
   };
   
   void Init(uint8_t* buffers[], uint16_t* reverb_buffer);
@@ -199,6 +201,10 @@ class Processor {
 
   float dry_;
   float wet_;
+
+  // Rain: state of the SOFTEN low-pass (two one-pole stages per channel).
+  void Soften(float amount, FloatFrame* out, size_t size);
+  float soften_state_[2][2] = { { 0.0f, 0.0f }, { 0.0f, 0.0f } };
   
   WowAndFlutter wow_and_flutter_;
   Reverb reverb_;

@@ -55,7 +55,8 @@ private:
 
     // Knobs.
     std::vector<std::unique_ptr<ui::OrbKnob>> knobs, smallKnobs;
-    juce::TextButton autoGainButton { "AUTO" };
+    juce::TextButton autoGainButton { "AUTO INPUT" };
+    juce::TextButton overlapButton { "OVERLAP" };
 
     // Motion: two modulators.
     struct ModRow

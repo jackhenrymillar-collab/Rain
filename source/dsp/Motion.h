@@ -156,6 +156,24 @@ inline constexpr std::array<const char*, 6> kSyncDivisionNames { "1/4", "1/8", "
 // module does with a clock patched into SEED. This mirrors its lookup so the panel
 // can name the resulting note length. Returns 0 when grains follow every pulse with
 // a probability instead (right of noon) and -1 at noon's dead zone edge cases.
+// How consonant a note is against the unshifted pitch, 0 to 1: root and octaves,
+// then the fifth, the thirds, the fourth and sixth, and the rest. Random grain
+// pitches are drawn in proportion to this, so clouds lean towards open intervals.
+inline float consonance (float semis) noexcept
+{
+    const int pc = ((static_cast<int> (std::lround (semis)) % 12) + 12) % 12;
+    switch (pc)
+    {
+        case 0:  return 1.0f;
+        case 7:  return 0.8f;
+        case 3:
+        case 4:  return 0.6f;
+        case 5:
+        case 9:  return 0.5f;
+        default: return 0.35f;
+    }
+}
+
 inline int syncDivider (float density) noexcept
 {
     constexpr int ratios[] = { 1, 2, 3, 4, 6, 8, 12, 16 };

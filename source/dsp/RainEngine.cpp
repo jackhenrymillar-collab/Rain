@@ -68,6 +68,57 @@ float RainEngine::bufferSeconds (Quality q) noexcept
     return 4.0f;
 }
 
+namespace
+{
+    constexpr float kForwardSize = 0.3333333f; // Beads' SIZE where grains turn forward
+    constexpr float kMaxGrainSize = 0.975f;    // just short of Beads' delay mode
+    constexpr float kMaxTriggerRate = 130.81278f;
+}
+
+float RainEngine::beadsSize (float size) noexcept
+{
+    return kForwardSize + std::clamp (size, 0.0f, 1.0f) * (kMaxGrainSize - kForwardSize);
+}
+
+float RainEngine::grainSeconds (float b) noexcept
+{
+    // beads::GranularPlayer::ComputeGrainDuration, forward half.
+    const float clamped = 1.0f - 1.5f * (std::max (b, kForwardSize) - kForwardSize);
+    const float shortness = std::min (1.0f, 1.025f * clamped);
+    return 4.0f * std::exp2 (shortness * -9.0f);
+}
+
+float RainEngine::beadsSizeForSeconds (float seconds) noexcept
+{
+    const float shortness = std::clamp (std::log2 (4.0f / std::max (seconds, 1.0e-4f)) / 9.0f, 0.0f, 1.0f);
+    const float b = kForwardSize + (1.0f - shortness / 1.025f) / 1.5f;
+    return std::clamp (b, kForwardSize, kMaxGrainSize);
+}
+
+float RainEngine::overlapAmount (float size) noexcept
+{
+    return std::exp2 (3.0f * std::clamp (size, 0.0f, 1.0f));
+}
+
+float RainEngine::grainRate (float d, float clockHz) noexcept
+{
+    if (clockHz > 0.0f)
+    {
+        const int divider = syncDivider (d);
+        if (divider > 0)
+            return clockHz / static_cast<float> (divider);
+        const float p = std::clamp ((d - 0.52f) * 2.15f, 0.0f, 1.0f);
+        return clockHz * p * p;
+    }
+    // beads::TriggerGenerator: 16 octaves either side of noon. Random triggers
+    // average 0.883 periods apart (its approximated exponential intervals).
+    if (d < 0.48f)
+        return kMaxTriggerRate * std::exp2 (-16.0f * d);
+    if (d > 0.52f)
+        return 0.5f * kMaxTriggerRate * std::exp2 (-16.0f * (1.0f - d)) / 0.883f;
+    return 0.0f;
+}
+
 void RainEngine::setTransport (double newBpm, double ppqPosition, bool playing) noexcept
 {
     if (newBpm > 1.0 && newBpm < 1000.0)
@@ -251,7 +302,8 @@ void RainEngine::runBeadsBlock()
                                   { &q.density, &smoothed.density }, { &q.pitchSemis, &smoothed.pitchSemis },
                                   { &q.timeRandom, &smoothed.timeRandom }, { &q.sizeRandom, &smoothed.sizeRandom },
                                   { &q.shapeRandom, &smoothed.shapeRandom }, { &q.pitchRandom, &smoothed.pitchRandom },
-                                  { &q.feedback, &smoothed.feedback }, { &q.dryWet, &smoothed.dryWet }, { &q.reverb, &smoothed.reverb } })
+                                  { &q.feedback, &smoothed.feedback }, { &q.dryWet, &smoothed.dryWet }, { &q.reverb, &smoothed.reverb },
+                                  { &q.reverse, &smoothed.reverse }, { &q.soften, &smoothed.soften } })
     {
         *state += kKnobSmoothing * (*target - *state);
         *target = *state;
@@ -267,22 +319,48 @@ void RainEngine::runBeadsBlock()
         r.has_cv = false;
         return r;
     };
-    // Grains mode stays below the point where Beads flips into delay mode.
-    const float size = q.mode == Mode::delay ? 1.0f : std::min (q.size, 0.975f);
+    // SIZE sets a forward grain length; in Overlap mode it sets how many grains
+    // overlap, and the length follows the grain rate.
+    float size = beadsSize (q.size);
+    if (q.overlap)
+    {
+        const bool clocked = q.sync && (q.seed || q.seedLock);
+        const auto idx = static_cast<std::size_t> (std::clamp (q.syncDivision, 0, static_cast<int> (kSyncDivisionBeats.size()) - 1));
+        const float clockHz = clocked ? static_cast<float> (bpm / 60.0 / kSyncDivisionBeats[idx]) : 0.0f;
+        const float rate = grainRate (q.density, clockHz);
+        size = rate > 0.0f ? beadsSizeForSeconds (overlapAmount (q.size) / rate) : kMaxGrainSize;
+    }
+    mon.grainSeconds.store (grainSeconds (size), std::memory_order_relaxed);
+    // Delay mode is Beads' SIZE fully clockwise.
+    if (q.mode == Mode::delay)
+        size = 1.0f;
+
     p.time = knob (q.time, q.timeRandom);
     p.size = knob (size, q.sizeRandom);
     p.shape = knob (q.shape, q.shapeRandom);
     p.pitch = knob (q.pitchSemis, q.pitchRandom);
     p.monophonic_mode = false;
+    p.reverse_probability = std::clamp (q.reverse, 0.0f, 1.0f);
 
     if (q.scale != Scale::off)
     {
         // To keep every grain in the scale, Rain draws the random pitch itself, the way
         // Beads would, and hands Beads the snapped result as a fixed value (a "CV" of 0).
+        // Notes are drawn in proportion to how consonant they are, so the root, fifth
+        // and thirds come up more often than the other scale notes.
         const float a = p.pitch.attenuverter;
         const float blend = a > 0.0f ? a : std::min (1.0f, a * pitchRng.uniform() * -3.0f);
-        const float semis = q.pitchSemis + pitchRng.centred() * 24.0f * blend;
-        p.pitch.base = quantisePitch (semis, q.scale);
+        float note = quantisePitch (q.pitchSemis, q.scale);
+        if (blend > 0.0f)
+        {
+            for (int attempt = 0; attempt < 6; ++attempt)
+            {
+                note = quantisePitch (q.pitchSemis + pitchRng.centred() * 24.0f * blend, q.scale);
+                if (pitchRng.uniform() < consonance (note))
+                    break;
+            }
+        }
+        p.pitch.base = note;
         p.pitch.has_cv = true;
     }
 
@@ -295,6 +373,7 @@ void RainEngine::runBeadsBlock()
     m.dry_wet = mixPot (q.dryWet);
     m.reverb_amount = mixPot (q.reverb);
     m.output_gate = false;
+    m.soften = q.soften;
 
     bool freeze[kMaxBeadsBlock];
     std::fill (freeze, freeze + kMaxBeadsBlock, q.freeze);

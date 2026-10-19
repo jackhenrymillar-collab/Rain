@@ -33,6 +33,9 @@ RainProcessor::RainProcessor()
     sync        = state.getRawParameterValue (ParamID::sync);
     syncRate    = state.getRawParameterValue (ParamID::syncRate);
     scale       = state.getRawParameterValue (ParamID::scale);
+    overlap     = state.getRawParameterValue (ParamID::overlap);
+    reverse     = state.getRawParameterValue (ParamID::reverse);
+    soften      = state.getRawParameterValue (ParamID::soften);
     modRate     = { state.getRawParameterValue (ParamID::mod1Rate), state.getRawParameterValue (ParamID::mod2Rate) };
     modDepth    = { state.getRawParameterValue (ParamID::mod1Depth), state.getRawParameterValue (ParamID::mod2Depth) };
     modTarget   = { state.getRawParameterValue (ParamID::mod1Target), state.getRawParameterValue (ParamID::mod2Target) };
@@ -95,6 +98,9 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.sync = sync->load() > 0.5f;
     p.syncDivision = juce::jlimit (0, static_cast<int> (dsp::kSyncDivisionBeats.size()) - 1, static_cast<int> (syncRate->load()));
     p.scale = static_cast<dsp::Scale> (juce::jlimit (0, dsp::kNumScales - 1, static_cast<int> (scale->load())));
+    p.overlap = overlap->load() > 0.5f;
+    p.reverse = reverse->load() * 0.01f;
+    p.soften = soften->load() * 0.01f;
     for (std::size_t m = 0; m < 2; ++m)
     {
         p.mods[m].rateHz = modRate[m]->load();

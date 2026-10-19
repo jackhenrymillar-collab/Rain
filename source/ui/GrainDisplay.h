@@ -29,8 +29,6 @@ public:
     // Beads' grain envelope (beads/dsp/grain_envelope.h), at phase 0..1.
     static float envelope (float phase, float shape) noexcept;
     static juce::String shapeName (float shape);
-    // Beads' grain length law (beads/dsp/granular_player.h), in seconds.
-    static float grainSeconds (float size) noexcept;
 
     // Text for DENSITY and TIME when synced to the host tempo.
     static juce::String noteName (double beats);

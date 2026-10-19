@@ -29,6 +29,7 @@
 #include "beads/dsp/processor.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "beads/dsp/mu_law.h"
 
@@ -97,6 +98,37 @@ void Processor::Configure(Media media, bool mono) {
   trigger_generator_.Init(sr);
   delay_controller_.Init(sr, max_delay * (mono ? 2 : 1));
   reverb_.Reset(sr);
+  std::fill(&soften_state_[0][0], &soften_state_[0][0] + 4, 0.0f);
+}
+
+// Rain: SOFTEN. A little saturation rounds the grains' peaks, then a gentle
+// 12 dB/octave low-pass (16 kHz down to about 2.5 kHz) takes the edge off bright
+// and pitched-up grains. Applied to the grains before the dry/wet mix.
+void Processor::Soften(float amount, FloatFrame* out, size_t size) {
+  if (amount <= 0.0f) {
+    std::fill(&soften_state_[0][0], &soften_state_[0][0] + 4, 0.0f);
+    return;
+  }
+  const float sr = sample_rate();
+  const float cutoff = std::min(
+      16000.0f * stmlib::SemitonesToRatio(-32.0f * amount), 0.42f * sr);
+  const float g = tanf(3.14159265f * cutoff / sr);
+  const float k = g / (1.0f + g);
+  const float drive = 1.0f + 1.2f * amount;
+  const float makeup = 1.0f / drive;
+  for (size_t i = 0; i < size; ++i) {
+    float* channel[2] = { &out[i].l, &out[i].r };
+    for (int c = 0; c < 2; ++c) {
+      float x = stmlib::SoftClip(*channel[c] * drive) * makeup;
+      for (int stage = 0; stage < 2; ++stage) {
+        float& z = soften_state_[c][stage];
+        const float v = (x - z) * k;
+        x = v + z;
+        z = x + v;
+      }
+      *channel[c] = x;
+    }
+  }
 }
 
 void Processor::Process(
@@ -202,6 +234,8 @@ void Processor::Process(
       break;
   }
   
+  Soften(mix_parameters.soften, out, size);
+
   // Fade-out / Fade-in the dry signal when switching between granular and
   // Delay mode.
   const float wet_fade = SmoothStep(

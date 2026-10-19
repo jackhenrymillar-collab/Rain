@@ -60,15 +60,6 @@ String GrainDisplay::shapeName (float s)
     return s < 0.15f ? "Square" : s < 0.5f ? "Decay" : s < 0.8f ? "Bell" : "Reverse";
 }
 
-float GrainDisplay::grainSeconds (float duration) noexcept
-{
-    const bool reverse = duration < 0.3333333f;
-    const float clamped = reverse ? duration * 3.0f * (2.0f - duration * 3.0f)
-                                  : 1.0f - 1.5f * (duration - 0.3333333f);
-    const float shortness = std::min (1.0f, 1.025f * clamped);
-    return std::pow (2.0f, shortness * -9.0f) * 4.0f;
-}
-
 String GrainDisplay::noteName (double beats)
 {
     struct Named { double beats; const char* name; };
@@ -151,11 +142,12 @@ void GrainDisplay::spawn()
     };
 
     Grain g;
-    const float size = lerpRandom (e[static_cast<size_t> (dsp::ModTarget::size)].load(), param (ParamID::sizeRandom));
+    // SIZE RANDOM works on Beads' own SIZE value, around the length the engine asks for.
+    const float size = lerpRandom (dsp::RainEngine::beadsSizeForSeconds (monitor.grainSeconds.load()), param (ParamID::sizeRandom));
     g.age = 0.0f;
     g.position = lerpRandom (e[static_cast<size_t> (dsp::ModTarget::time)].load(), param (ParamID::timeRandom));
-    g.seconds = grainSeconds (size);
-    g.reverse = size < 0.3333333f;
+    g.seconds = dsp::RainEngine::grainSeconds (size);
+    g.reverse = rng.nextFloat() * 100.0f < param (ParamID::reverse);
     g.shape = lerpRandom (e[static_cast<size_t> (dsp::ModTarget::shape)].load(), param (ParamID::shapeRandom));
     g.life = jlimit (0.35f, 1.6f, g.seconds + 0.45f);
     g.lane = rng.nextFloat();
@@ -343,13 +335,17 @@ void GrainDisplay::paint (Graphics& g)
             for (int i = 0; i <= 24; ++i)
             {
                 const float q = static_cast<float> (i) / 24.0f;
-                p.lineTo (xa + q * width, base - envelope (q, gr.shape) * h);
+                // A reverse grain reads the buffer right to left, so its envelope
+                // starts at its right-hand end.
+                p.lineTo (xa + q * width, base - envelope (gr.reverse ? 1.0f - q : q, gr.shape) * h);
             }
             p.lineTo (xa + width, base);
             p.closeSubPath();
-            g.setColour (Theme::dotGlow.withAlpha (0.08f + 0.2f * fade));
+            // Reverse grains are drawn in cool moonlight blue, forward grains in gold.
+            const auto colour = gr.reverse ? Colour (160, 186, 255) : Theme::dotGlow;
+            g.setColour (colour.withAlpha (0.08f + 0.2f * fade));
             g.fillPath (p);
-            g.setColour (Theme::dotGlow.withAlpha (0.3f + 0.55f * fade));
+            g.setColour (colour.withAlpha (0.3f + 0.55f * fade));
             g.strokePath (p, PathStrokeType (1.1f));
         }
     }

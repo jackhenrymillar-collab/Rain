@@ -52,7 +52,7 @@ namespace
         p.reverb = 0.0f;
         p.feedback = 0.0f;
         p.density = 0.85f; // random grains, fairly dense
-        p.size = 0.4f;
+        p.size = 0.1f;
         p.time = 0.3f;
         return p;
     }
@@ -203,7 +203,7 @@ TEST_CASE ("Hot input stays below full scale and the low end stays clean")
     RainParams p;
     p.dryWet = 1.0f;
     p.reverb = 0.0f;
-    p.size = 0.65f;
+    p.size = 0.49f;
     p.shape = 0.6f;
     p.density = 0.9f;
     e.setParams (p);

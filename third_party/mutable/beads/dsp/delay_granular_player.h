@@ -30,6 +30,9 @@
 #define BEADS_DSP_DELAY_GRANULAR_PLAYER_H_
 
 #include "stmlib/stmlib.h"
+#include "stmlib/utils/random.h"
+
+#include <algorithm>
 
 #include "beads/dsp/delay_grain.h"
 #include "beads/dsp/granular_player.h"
@@ -48,8 +51,13 @@ class DelayGranularPlayer : public GranularPlayer<DelayGrain, 32> {
       const Parameters& p,
       FloatFrame* out) {
     if (trigger.trigger) {
-      const float duration = p.size.value();
-      const bool reverse = duration < 0.3333333f;
+      float duration = p.size.value();
+      bool reverse = duration < 0.3333333f;
+      if (p.reverse_probability >= 0.0f) {
+        // Rain: direction is drawn per grain, and SIZE only sets the length.
+        reverse = stmlib::Random::GetFloat() < p.reverse_probability;
+        duration = std::max(duration, 0.3333333f);
+      }
 
       float amplitude, pan;
       ComputeGrainAmplitudeAndPan(trigger, p, &amplitude, &pan);

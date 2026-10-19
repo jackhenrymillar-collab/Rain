@@ -110,13 +110,21 @@ RainEditor::RainEditor (RainProcessor& p)
     }
     const std::pair<const char*, const char*> small[] = {
         { ParamID::timeRandom, "RANDOM" }, { ParamID::sizeRandom, "RANDOM" }, { ParamID::shapeRandom, "RANDOM" },
-        { ParamID::pitchRandom, "RANDOM" }, { ParamID::inputGain, "INPUT" }, { ParamID::outputGain, "OUTPUT" },
+        { ParamID::pitchRandom, "RANDOM" }, { ParamID::reverse, "REVERSE" }, { ParamID::soften, "SOFTEN" },
+        { ParamID::inputGain, "INPUT" }, { ParamID::outputGain, "OUTPUT" },
     };
     for (const auto& [id, name] : small)
     {
         smallKnobs.push_back (std::make_unique<ui::OrbKnob> (state, id, name, ui::OrbKnob::Size::small));
         content.addAndMakeVisible (*smallKnobs.back());
     }
+
+    smallKnobs[4]->getSlider().setTooltip ("Chance each grain plays backwards");
+    smallKnobs[5]->getSlider().setTooltip ("Darkens and warms the grains, leaving the dry signal alone");
+
+    // Overlap: SIZE sets how many grains overlap, and their length follows DENSITY.
+    overlapButton.setTooltip ("SIZE sets how many grains overlap; their length follows DENSITY and the tempo, so the cloud stays smooth");
+    content.addAndMakeVisible (overlapButton);
 
     // Motion.
     const char* modNames[] = { "WAVE", "DRIFT" };
@@ -186,18 +194,20 @@ RainEditor::RainEditor (RainProcessor& p)
     // Toggle pills.
     const std::pair<TextButton*, const char*> toggles[] = {
         { &freezeButton, ParamID::freeze }, { &seedLockButton, ParamID::seedLock },
-        { &autoGainButton, ParamID::autoGain }, { &syncButton, ParamID::sync },
+        { &autoGainButton, ParamID::autoGain }, { &syncButton, ParamID::sync }, { &overlapButton, ParamID::overlap },
     };
     for (const auto& [button, id] : toggles)
     {
         button->setClickingTogglesState (true);
         buttonAttachments.push_back (std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (state, id, *button));
     }
-    for (auto* b : { &freezeButton, &seedButton, &seedLockButton, &autoGainButton, &syncButton })
+    for (auto* b : { &freezeButton, &seedButton, &seedLockButton, &syncButton, &overlapButton })
     {
         b->getProperties().set ("pill", true);
         content.addAndMakeVisible (*b);
     }
+    autoGainButton.getProperties().set ("compact", true);
+    content.addAndMakeVisible (autoGainButton);
     freezeButton.setTooltip ("Stop recording; grains keep playing the held buffer");
     seedButton.setTooltip ("Hold to play grains (when SEED LOCK is off)");
     seedLockButton.setTooltip ("On: grains run on their own. Off: grains play only while SEED is held");
@@ -253,10 +263,12 @@ void RainEditor::showMode (int index)
     modeTitle.setText (kModes[index].title, dontSendNotification);
     modeDescription.setText (kModes[index].description, dontSendNotification);
 
-    // SIZE does nothing in delay mode.
+    // SIZE, REVERSE and OVERLAP do nothing in delay mode.
     const bool delay = index == 1;
     knobs[1]->setAlpha (delay ? 0.4f : 1.0f);
     smallKnobs[1]->setAlpha (delay ? 0.4f : 1.0f);
+    smallKnobs[4]->setAlpha (delay ? 0.4f : 1.0f);
+    overlapButton.setAlpha (delay ? 0.4f : 1.0f);
     knobs[1]->getSlider().setTooltip (delay ? "SIZE has no effect in Delay mode" : String());
     knobs[0]->getSlider().setTooltip (delay ? "In Delay mode, TIME picks which slice loops while FROZEN" : String());
 }
@@ -297,6 +309,10 @@ void RainEditor::updateLiveValues()
                                 : sync ? ui::GrainDisplay::syncDensityText (density, rateIndex) : String());
     knobs[0]->setValueOverride (sync && ! delay ? ui::GrainDisplay::syncTimeText (effectiveTime, mon.bufferSeconds.load(), mon.bpm.load(), rateIndex) : String());
     ignoreUnused (effectiveDensity);
+    // In Overlap mode SIZE reads as how many grains overlap.
+    knobs[1]->setValueOverride (value (ParamID::overlap) > 0.5f && ! delay
+        ? String (dsp::RainEngine::overlapAmount (mon.effective[static_cast<size_t> (dsp::ModTarget::size)].load()), 1) + String::fromUTF8 ("\u00d7 overlap")
+        : String());
 
     for (size_t m = 0; m < 2; ++m)
         modRows[m].scope.push (mon.modValue[m].load());
@@ -338,6 +354,7 @@ void RainEditor::layoutContent()
     modeDescription.setBounds (kLeft, 210, 530, 28);
     for (int i = 0; i < 2; ++i)
         modeChips[static_cast<size_t> (i)].setBounds (kLeft + i * 142, 252, 130, 44);
+    overlapButton.setBounds (kLeft + 2 * 142 + 18, 255, 140, 38);
     grainDisplay.setBounds (596, 128, 526, 176);
 
     // Knob rows.
@@ -345,7 +362,7 @@ void RainEditor::layoutContent()
         knobs[i]->setBounds (columnX (static_cast<int> (i)), 350, kColumnWidth, 152);
     for (size_t i = 0; i < smallKnobs.size(); ++i)
         smallKnobs[i]->setBounds (columnX (static_cast<int> (i)), 514, kColumnWidth, 54);
-    autoGainButton.setBounds (columnX (6) + (kColumnWidth - 96) / 2, 522, 96, 38);
+    autoGainButton.setBounds (columnX (7) + kColumnWidth - 112, 322, 112, 26);
 
     // Motion rows.
     for (size_t m = 0; m < 2; ++m)

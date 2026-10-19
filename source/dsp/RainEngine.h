@@ -76,8 +76,15 @@ struct RainParams
     bool sync = false;
     int syncDivision = 2; // index into kSyncDivisionBeats (1/16)
 
-    // Snaps grain pitch, including PITCH RANDOM and modulation, to a scale.
+    // Snaps grain pitch, including PITCH RANDOM and modulation, to a scale. Random
+    // pitches favour the root, fifth and third, so clouds lean consonant.
     Scale scale = Scale::off;
+
+    // Overlap: SIZE sets how many grains overlap (1 to 8) instead of their length,
+    // and the length follows DENSITY (and the tempo), so the cloud never has gaps.
+    bool overlap = false;
+    float reverse = 0.0f; // chance each grain plays backwards, 0 to 1
+    float soften = 0.0f;  // darkens and warms the grains, 0 to 1
 
     // Modulator 1 is a sine wave, modulator 2 is smooth random drift.
     std::array<ModSettings, 2> mods {};
@@ -98,6 +105,9 @@ struct EngineMonitor
     // Frozen while FREEZE is on, like the buffer itself.
     std::array<std::atomic<float>, kNumLevels> levels {};
     std::atomic<int> levelWrite { 0 };
+
+    // Grain length Beads is asked for (before SIZE RANDOM), in seconds.
+    std::atomic<float> grainSeconds { 0.15f };
 
     std::atomic<float> bufferSeconds { 4.0f };
     std::atomic<float> bpm { 120.0f };
@@ -139,6 +149,18 @@ public:
 
     // Length of Beads' recording buffer for each quality, in seconds.
     static float bufferSeconds (Quality q) noexcept;
+
+    // Rain's SIZE runs through Beads' forward grain lengths only (reversing is its own
+    // control): knob 0..1 maps onto Beads' SIZE from 9 o'clock to just short of the
+    // delay-mode switch point.
+    static float beadsSize (float size) noexcept;
+    // Beads' grain length law for a forward SIZE value, and its inverse.
+    static float grainSeconds (float beadsSize) noexcept;
+    static float beadsSizeForSeconds (float seconds) noexcept;
+    // Number of grains overlapping for an Overlap-mode SIZE knob (1 to 8).
+    static float overlapAmount (float size) noexcept;
+    // Average grain rate for DENSITY, free-running or on a clock of clockHz (0 = free).
+    static float grainRate (float density, float clockHz) noexcept;
 
     const EngineMonitor& monitor() const noexcept { return mon; }
 
