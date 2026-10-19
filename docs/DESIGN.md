@@ -15,12 +15,19 @@ host's audio to that rate and back (`RainEngine`), processing in the module's ow
 blocks of rate ÷ 4000 frames. This adds about 20 to 40 samples of latency, which is
 reported to the host.
 
+## Mode (Rain)
+
+| Mode | What it is |
+| --- | --- |
+| **Grains** | Beads' granular mode. |
+| **Delay** | Beads' delay mode, which the module reaches by turning SIZE fully clockwise. Density sets the delay time (longest at noon, shorter either side; right of noon adds a second tap), Feedback the repeats, Shape the envelope of the delay taps. While frozen, Time picks which slice of the buffer loops. Synced, Density picks a ratio of the clock. |
+
 ## Grain controls
 
 | Control | Range | What it does |
 | --- | --- | --- |
 | **Time** | 0 to 100% | Where in the buffer new grains start. Left is the most recent audio, right is the oldest. |
-| **Size** | 0 to 100% | Grain length and direction. Left of about 1/3, grains play **backwards**: fully left they are long (up to 4 s), getting shorter towards 1/3. Right of 1/3 they play forwards, getting longer again towards the right. At the very end of the travel (above 99%) Rain switches into Beads' **delay mode**: Time sets the delay, Shape the tap pattern, Density the clock. |
+| **Size** | 0 to 100% | Grain length and direction. Left of about 1/3, grains play **backwards**: fully left they are long (up to 4 s), getting shorter towards 1/3. Right of 1/3 they play forwards, getting longer again towards the right. Not used in Delay mode. |
 | **Shape** | 0 to 100% | Grain envelope: square at the left, a sharp attack with a decay at 1/3, a smooth bell around 2/3, and reversed (slow swell, sharp end) at the right. |
 | **Pitch** | −24 to +24 st | Grain playback pitch. **Rain:** continuous; on the module the knob snaps to 0, 1, 3, 4, 7, 12 and 24 semitones. |
 | **Random** (×4) | −100 to +100% | The small knobs under Time, Size, Shape and Pitch. On Beads these are attenuverters; with nothing patched they set randomness. Clockwise: a new random value for every grain. Counter-clockwise: the value jumps only occasionally. Centre: off. |
@@ -42,6 +49,47 @@ reported to the host.
 | **Seed** | Fires a grain while held. |
 | **Seed Lock** | **Rain:** on by default, which is the module's power-up state: grains run on their own at the Density rate. Turn it off and grains only play while Seed is held. (On the module, a long press of SEED toggles this.) |
 
+## Motion (Rain)
+
+Two modulators stand in for the module's CV inputs. Each has a **Rate** (0.01 to
+10 Hz, shown as a period below 1 Hz), a bipolar **Depth** and a **Target**: Time,
+Size, Shape, Pitch, Density, Feedback, Dry/Wet or Reverb. Full depth sweeps half the
+knob's travel either way (an octave either way for Pitch).
+
+- **Wave**: a sine LFO.
+- **Drift**: smooth random movement, a new random level each cycle, eased between.
+
+The panel shows a gold ring on any knob a modulator is moving, from its setting to
+where it is now, and a small trace of each modulator.
+
+## Tempo sync (Rain)
+
+**Sync** patches a clock from the host tempo into Beads' SEED input, as you would on
+the module with a clock in the SEED jack. The clock note length is set beside it
+(1/4, 1/8, 1/16, 1/32, 1/8T, 1/16T). With the host stopped, the clock free-runs at
+the host's tempo.
+
+- Grains: Density divides the clock left of noon (every 1 to 16 pulses; the panel
+  names the resulting note), fires on every pulse at noon, and picks pulses at
+  random right of noon. Time snaps to whole clock steps back in the buffer.
+- Delay: Density picks a ratio of the clock for the delay time.
+
+## Scale (Rain)
+
+Snaps grain pitch to a scale: Chromatic, Major, Minor, Pentatonic, Minor Pentatonic,
+Fifths or Octaves, with the unshifted input as the root. It applies after Pitch
+Random and modulation, so random pitch spreads and pitch modulation stay in key. To
+do this Rain draws the per-grain random pitch itself (the same law as Beads) and
+hands Beads the snapped value.
+
+## Presets (Rain)
+
+19 factory presets, plus your own. Click the preset name for the list, the arrows
+to step through, and Save to store the current sound. User presets are XML files
+in `~/Library/Audio/Presets/Overcast Audio/Rain`. A gold dot by the name means the
+sound has been edited since the preset was loaded. Presets leave Freeze, Seed,
+Input and Auto alone. Hosts also see the factory presets as programs.
+
 ## Quality
 
 | Mode | Beads media | Rate and depth | Buffer (stereo) | Character |
@@ -61,16 +109,19 @@ reported to the host.
 
 ## Not ported (yet)
 
-- The CV inputs and the assignable CV. A future modulation section could feed them.
+- The CV inputs and the assignable CV (the Motion modulators cover the common uses).
 - The wavetable synth mode the module falls into when nothing is patched.
-- The SEED gate input and clock divider. A host-tempo sync could drive it.
 - Mono mode (double buffer length when only one input is patched).
 
 ## Front panel
 
-Built in `source/PluginEditor.cpp` and `source/ui/`. Presets, A/B and Save from the
-mockup are not built yet; the preset bar shows "Init" for now. The mockup is at <https://claude.ai/artifact/RHF73eDwpbg3wDwLzexysG>. It follows
-Overcast's night-sky style: serif wordmark with a raindrop, preset bar with A/B and
-Save, glowing navy knobs (Time, Size, Shape, Pitch, Density, Feedback, Reverb,
-Dry/Wet), four small Random knobs, Input and Output, Quality chips that change the big
-title, and Freeze and Seed pill buttons.
+Built in `source/PluginEditor.cpp` and `source/ui/`, in Overcast's night-sky style:
+preset bar, Grains/Delay switch, the grain display (`ui/GrainDisplay`: the buffer
+waveform, Time marker, grain envelopes and the density lane, drawn with Beads' own
+laws for grain length, envelope and trigger rate), eight large knobs, the Random
+row with Input, Output and Auto, the Motion and Tempo & Scale panels, and Freeze,
+Seed, Seed Lock and Quality along the bottom. The layout is a fixed 1170 x 860
+design scaled to the window.
+
+`tools/Snapshot.cpp` (`-DRAIN_BUILD_SNAPSHOT=ON`) renders the panel to PNG frames
+while feeding the plugin audio, for screenshots without a host.

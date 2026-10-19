@@ -2,9 +2,11 @@
 
 #include "Blocks.h"
 #include "InputGain.h"
+#include "Motion.h"
 #include "Resampler.h"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -23,11 +25,28 @@ enum class Quality
     dirtyTape  // 24 kHz, 8-bit mu-law, ~16 s, wow and flutter
 };
 
+// Grains is Beads' granular mode; Delay is its delay mode, which the module reaches
+// by turning SIZE fully clockwise. Rain gives each its own switch position.
+enum class Mode
+{
+    grains,
+    delay
+};
+
+struct ModSettings
+{
+    float rateHz = 0.25f;
+    float depth = 0.0f; // -1 to +1
+    ModTarget target = ModTarget::off;
+};
+
 struct RainParams
 {
+    Mode mode = Mode::grains;
+
     // Knob positions, 0 to 1, exactly as Beads reads its pots.
     float time = 0.5f;
-    float size = 0.5f;     // above 0.99 Beads switches to its delay mode
+    float size = 0.5f;     // unused in delay mode
     float shape = 0.5f;
     float density = 0.5f;  // noon = no grains, left = regular, right = random
     float pitchSemis = 0.0f; // -24 to +24
@@ -49,6 +68,39 @@ struct RainParams
     bool autoGain = false;     // Beads' automatic input level
     float inputGainDb = 0.0f;  // 0 to 32 dB when autoGain is off
     float outputGainDb = 2.5f; // makes up Beads' 0.75 dry gain, so 0% wet is unity
+
+    // Tempo sync: a clock from the host's tempo is patched into Beads' SEED input,
+    // so DENSITY divides it (left of noon) or picks pulses at random (right of noon),
+    // and TIME snaps to whole clock steps. In delay mode the clock sets the delay.
+    bool sync = false;
+    int syncDivision = 2; // index into kSyncDivisionBeats (1/16)
+
+    // Snaps grain pitch, including PITCH RANDOM and modulation, to a scale.
+    Scale scale = Scale::off;
+
+    // Modulator 1 is a sine wave, modulator 2 is smooth random drift.
+    std::array<ModSettings, 2> mods {};
+};
+
+// Live values for the panel, written by the audio thread and read by the editor.
+struct EngineMonitor
+{
+    static constexpr int kLevelRate = 128;    // level readings per second
+    static constexpr int kNumLevels = 2048;   // 16 s, the longest buffer
+
+    // Effective knob positions after modulation and snapping, 0 to 1, indexed by
+    // ModTarget (pitch is mapped from -24..+24 semitones to 0..1).
+    std::array<std::atomic<float>, kNumModTargets> effective {};
+    std::array<std::atomic<float>, 2> modValue {};
+
+    // Peak input level written into the buffer, one reading per 1/kLevelRate s.
+    // Frozen while FREEZE is on, like the buffer itself.
+    std::array<std::atomic<float>, kNumLevels> levels {};
+    std::atomic<int> levelWrite { 0 };
+
+    std::atomic<float> bufferSeconds { 4.0f };
+    std::atomic<float> bpm { 120.0f };
+    std::atomic<double> beat { 0.0 }; // clock position in quarter notes
 };
 
 // Runs the Mutable Instruments Beads signal path (third_party/mutable) inside a plugin.
@@ -66,6 +118,10 @@ public:
     void reset();
     void setParams (const RainParams& params);
 
+    // Host tempo and position, once per block before process(). When the host is not
+    // playing the clock free-runs at the given tempo.
+    void setTransport (double bpm, double ppqPosition, bool playing) noexcept;
+
     // In-place stereo processing; left and right must be distinct buffers.
     void process (float* left, float* right, int numSamples);
 
@@ -74,6 +130,11 @@ public:
 
     // Knob law of Beads' attenuverters (-1 to +1 in, -1 to +1 out, small dead zone).
     static float attenuverterLaw (float knob) noexcept;
+
+    // Length of Beads' recording buffer for each quality, in seconds.
+    static float bufferSeconds (Quality q) noexcept;
+
+    const EngineMonitor& monitor() const noexcept { return mon; }
 
 private:
     void configure (Quality q);
@@ -103,6 +164,17 @@ private:
 
     std::vector<beads::FloatFrame> fifo;
     std::size_t fifoRead = 0, fifoWrite = 0;
+
+    // Rain's additions.
+    void applyMotion (RainParams& p, float dt);
+    Modulator wave { Modulator::Kind::wave, 0x1234567u }, drift { Modulator::Kind::drift, 0x7654321u };
+    Rng pitchRng { 0x2468aceu };
+    double bpm = 120.0, beatPos = 0.0;
+    std::array<double, kMaxBeadsBlock> beadsBeat {};
+    unsigned char clockFlags = 0; // previous stmlib::GateFlags
+    float levelPeak = 0.0f;
+    int levelCount = 0;
+    EngineMonitor mon;
 
     Smoother outputGain;
     Quality configured = Quality::digital;

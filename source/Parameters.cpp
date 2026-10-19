@@ -1,11 +1,36 @@
 #include "Parameters.h"
 
+#include "dsp/Motion.h"
+
 namespace rain
 {
 
 juce::StringArray qualityNames()
 {
     return { "Digital", "Vintage", "Clean Tape", "Dirty Tape" };
+}
+
+juce::StringArray modeNames()
+{
+    return { "Grains", "Delay" };
+}
+
+juce::StringArray syncRateNames()
+{
+    juce::StringArray names;
+    for (const auto* n : dsp::kSyncDivisionNames)
+        names.add (n);
+    return names;
+}
+
+juce::StringArray scaleNames()
+{
+    return { "Off", "Chromatic", "Major", "Minor", "Pentatonic", "Minor Pent.", "Fifths", "Octaves" };
+}
+
+juce::StringArray modTargetNames()
+{
+    return { "Off", "Time", "Size", "Shape", "Pitch", "Density", "Feedback", "Dry/Wet", "Reverb" };
 }
 
 namespace
@@ -65,6 +90,37 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::autoGain, v }, "Auto Gain", false));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::inputGain, v }, "Input Gain", Range { 0.0f, 32.0f, 0.1f }, 0.0f, withLabel ("dB", 1)));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::outputGain, v }, "Output Gain", Range { -24.0f, 12.0f, 0.1f }, 2.5f, withLabel ("dB", 1)));
+
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::mode, v }, "Mode", modeNames(), 0));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::sync, v }, "Tempo Sync", false));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::syncRate, v }, "Sync Rate", syncRateNames(), 2));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::scale, v }, "Scale", scaleNames(), 0));
+
+    // Modulator rates: 0.01 to 10 Hz, skewed so slow rates get most of the knob.
+    auto rateRange = Range { 0.01f, 10.0f, 0.0f, 0.3f };
+    auto rateText = AudioParameterFloatAttributes()
+        .withStringFromValueFunction ([] (float hz, int) {
+            if (hz < 1.0f)
+                return String (1.0f / hz, hz < 0.1f ? 0 : 1) + " s";
+            return String (hz, 2) + " Hz";
+        })
+        .withValueFromStringFunction ([] (const String& t) {
+            const float x = t.getFloatValue();
+            return t.trim().endsWithIgnoreCase ("s") && ! t.containsIgnoreCase ("hz") && x > 0.0f ? 1.0f / x : x;
+        });
+    const char* rateIds[] = { ParamID::mod1Rate, ParamID::mod2Rate };
+    const char* depthIds[] = { ParamID::mod1Depth, ParamID::mod2Depth };
+    const char* targetIds[] = { ParamID::mod1Target, ParamID::mod2Target };
+    const char* names[] = { "Wave", "Drift" };
+    const float defaultRates[] = { 0.2f, 0.5f };
+    const int defaultTargets[] = { 1, 4 }; // Time, Pitch
+    for (int m = 0; m < 2; ++m)
+    {
+        const String n (names[m]);
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { rateIds[m], v }, n + " Rate", rateRange, defaultRates[m], rateText));
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { depthIds[m], v }, n + " Depth", Range { -100.0f, 100.0f, 0.1f }, 0.0f, withLabel ("%")));
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { targetIds[m], v }, n + " Target", modTargetNames(), defaultTargets[m]));
+    }
 
     return layout;
 }

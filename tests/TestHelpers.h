@@ -8,9 +8,6 @@
 namespace rain::test
 {
 
-// RT60 from an impulse response using Schroeder backward integration,
-// fitted over the -5 to -25 dB range (T20) and extrapolated to 60 dB.
-
 inline double energy (const float* x, std::size_t n)
 {
     double e = 0.0;
