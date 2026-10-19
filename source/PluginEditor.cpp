@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 
+#include <tuple>
+
 namespace rain
 {
 
@@ -110,8 +112,7 @@ RainEditor::RainEditor (RainProcessor& p)
     }
     const std::pair<const char*, const char*> small[] = {
         { ParamID::timeRandom, "RANDOM" }, { ParamID::sizeRandom, "RANDOM" }, { ParamID::shapeRandom, "RANDOM" },
-        { ParamID::pitchRandom, "RANDOM" }, { ParamID::reverse, "REVERSE" }, { ParamID::soften, "SOFTEN" },
-        { ParamID::inputGain, "INPUT" }, { ParamID::outputGain, "OUTPUT" },
+        { ParamID::pitchRandom, "RANDOM" }, { ParamID::inputGain, "INPUT" }, { ParamID::outputGain, "OUTPUT" },
     };
     for (const auto& [id, name] : small)
     {
@@ -119,8 +120,18 @@ RainEditor::RainEditor (RainProcessor& p)
         content.addAndMakeVisible (*smallKnobs.back());
     }
 
-    smallKnobs[4]->getSlider().setTooltip ("Chance each grain plays backwards");
-    smallKnobs[5]->getSlider().setTooltip ("Darkens and warms the grains, leaving the dry signal alone");
+    // Grain character: how each grain sounds and where it sits.
+    const std::tuple<const char*, const char*, const char*> character[] = {
+        { ParamID::reverse, "REVERSE", "Chance each grain plays backwards" },
+        { ParamID::soften, "SOFTEN", "Darkens and warms the grains, leaving the dry signal alone" },
+        { ParamID::randomPan, "RANDOM PAN", "Places each grain at a random point in the stereo field" },
+    };
+    for (const auto& [id, name, tip] : character)
+    {
+        characterKnobs.push_back (std::make_unique<ui::OrbKnob> (state, id, name, ui::OrbKnob::Size::medium));
+        characterKnobs.back()->getSlider().setTooltip (tip);
+        content.addAndMakeVisible (*characterKnobs.back());
+    }
 
     // Overlap: SIZE sets how many grains overlap, and their length follows DENSITY.
     overlapButton.setTooltip ("SIZE sets how many grains overlap; their length follows DENSITY and the tempo, so the cloud stays smooth");
@@ -201,13 +212,11 @@ RainEditor::RainEditor (RainProcessor& p)
         button->setClickingTogglesState (true);
         buttonAttachments.push_back (std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (state, id, *button));
     }
-    for (auto* b : { &freezeButton, &seedButton, &seedLockButton, &syncButton, &overlapButton })
+    for (auto* b : { &freezeButton, &seedButton, &seedLockButton, &autoGainButton, &syncButton, &overlapButton })
     {
         b->getProperties().set ("pill", true);
         content.addAndMakeVisible (*b);
     }
-    autoGainButton.getProperties().set ("compact", true);
-    content.addAndMakeVisible (autoGainButton);
     freezeButton.setTooltip ("Stop recording; grains keep playing the held buffer");
     seedButton.setTooltip ("Hold to play grains (when SEED LOCK is off)");
     seedLockButton.setTooltip ("On: grains run on their own. Off: grains play only while SEED is held");
@@ -267,7 +276,8 @@ void RainEditor::showMode (int index)
     const bool delay = index == 1;
     knobs[1]->setAlpha (delay ? 0.4f : 1.0f);
     smallKnobs[1]->setAlpha (delay ? 0.4f : 1.0f);
-    smallKnobs[4]->setAlpha (delay ? 0.4f : 1.0f);
+    characterKnobs[0]->setAlpha (delay ? 0.4f : 1.0f);
+    characterKnobs[2]->setAlpha (delay ? 0.4f : 1.0f);
     overlapButton.setAlpha (delay ? 0.4f : 1.0f);
     knobs[1]->getSlider().setTooltip (delay ? "SIZE has no effect in Delay mode" : String());
     knobs[0]->getSlider().setTooltip (delay ? "In Delay mode, TIME picks which slice loops while FROZEN" : String());
@@ -320,7 +330,10 @@ void RainEditor::updateLiveValues()
     const String tempo = sync ? "Locked to " + String (roundToInt (mon.bpm.load())) + " BPM"
                               : String (delay ? "Delay runs free" : "Grains run free");
     if (tempoReadout.getText() != tempo)
+    {
         tempoReadout.setText (tempo, dontSendNotification);
+        syncRate->getBox().setTooltip ("Clock note length. " + tempo);
+    }
     const String scaleText = value (ParamID::scale) > 0.5f ? "Grains stay in key" : "Pitch is free";
     if (scaleReadout.getText() != scaleText)
         scaleReadout.setText (scaleText, dontSendNotification);
@@ -362,27 +375,33 @@ void RainEditor::layoutContent()
         knobs[i]->setBounds (columnX (static_cast<int> (i)), 350, kColumnWidth, 152);
     for (size_t i = 0; i < smallKnobs.size(); ++i)
         smallKnobs[i]->setBounds (columnX (static_cast<int> (i)), 514, kColumnWidth, 54);
-    autoGainButton.setBounds (columnX (7) + kColumnWidth - 112, 322, 112, 26);
+    autoGainButton.setBounds (columnX (6) + (kColumnWidth - 96) / 2, 522, 96, 38);
 
     // Motion rows.
     for (size_t m = 0; m < 2; ++m)
     {
         auto& row = modRows[m];
         const int y = 614 + static_cast<int> (m) * 58;
-        row.name.setBounds (58, y, 70, 54);
-        row.scope.setBounds (126, y + 9, 56, 36);
-        row.rate->setBounds (188, y, 128, 54);
-        row.depth->setBounds (318, y, 128, 54);
-        row.target->setBounds (450, y + 8, 108, 38);
+        constexpr int x = 318; // the Motion panel sits right of Grain Character
+        row.name.setBounds (x + 56, y, 68, 54);
+        row.scope.setBounds (x + 120, y + 9, 52, 36);
+        row.rate->setBounds (x + 176, y, 124, 54);
+        row.depth->setBounds (x + 300, y, 124, 54);
+        row.target->setBounds (x + 428, y + 8, 106, 38);
     }
 
-    // Tempo and scale.
-    syncButton.setBounds (606, 622, 104, 38);
-    syncRate->setBounds (722, 622, 100, 38);
-    tempoReadout.setBounds (834, 622, 280, 38);
-    scaleLabel.setBounds (610, 680, 100, 38);
-    scale->setBounds (722, 680, 160, 38);
-    scaleReadout.setBounds (894, 680, 220, 38);
+    // Grain character.
+    for (size_t i = 0; i < characterKnobs.size(); ++i)
+        characterKnobs[i]->setBounds (46 + static_cast<int> (i) * 96, 612, 96, 116);
+
+    // Tempo and scale. (The tempo and scale states show as tooltips; there's no
+    // room for the readouts beside them.)
+    syncButton.setBounds (896, 622, 100, 38);
+    syncRate->setBounds (1006, 622, 110, 38);
+    scaleLabel.setBounds (900, 680, 80, 38);
+    scale->setBounds (986, 680, 130, 38);
+    tempoReadout.setVisible (false);
+    scaleReadout.setVisible (false);
 
     // Footer.
     freezeButton.setBounds (kLeft, 772, 150, 46);

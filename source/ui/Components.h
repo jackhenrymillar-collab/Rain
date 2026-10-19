@@ -37,7 +37,7 @@ public:
 class OrbKnob final : public juce::Component
 {
 public:
-    enum class Size { large, small };
+    enum class Size { large, medium, small };
 
     OrbKnob (juce::AudioProcessorValueTreeState& state, const juce::String& paramID,
              const juce::String& name, Size size);

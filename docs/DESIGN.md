@@ -49,9 +49,10 @@ reported to the host.
 | **Time** | 0 to 100% | Where in the buffer new grains start. Left is the most recent audio, right is the oldest. |
 | **Size** | 0 to 100% | Grain length, 8 ms to about 3 s. **Rain:** forward lengths only, since direction has its own control (Reverse); on the module the left third of SIZE plays every grain backwards. With **Overlap** on, Size sets how many grains overlap instead (1× to 8×). Not used in Delay mode. |
 | **Overlap** | on/off | **Rain:** grain length follows the grain rate (Density, and the tempo when synced), so a set number of grains always crossfade into each other and the cloud has no gaps. |
-| **Reverse** | 0 to 100% | **Rain:** the chance each grain plays backwards. 50% mixes swells and forward grains; 100% is fully backwards. Not used in Delay mode. |
+| **Reverse** | 0 to 100% | **Rain** (Grain Character): the chance each grain plays backwards. 50% mixes swells and forward grains; 100% is fully backwards. Not used in Delay mode. |
+| **Random Pan** | 0 to 100% | **Rain** (Grain Character): pulls each grain towards a random point in the stereo field. At 0 grains spread as on the module (wider with more randomness and more overlapping grains); at 100% each lands anywhere from hard left to hard right. |
 | **Shape** | 0 to 100% | Grain envelope: square at the left, a sharp attack with a decay at 1/3, a smooth bell around 2/3, and reversed (slow swell, sharp end) at the right. |
-| **Pitch** | −24 to +24 st | Grain playback pitch. **Rain:** continuous; on the module the knob snaps to 0, 1, 3, 4, 7, 12 and 24 semitones. |
+| **Pitch** | −24 to +24 st | Grain playback pitch, with the module's knob law: each way from noon the knob steps through 0, 1, 3, 4, 7, 12 and 24 semitones, holding each interval for the first third of its sixth of the travel and gliding smoothly to the next. Pitch modulation and Pitch Random are continuous on top. |
 | **Random** (×4) | −100 to +100% | The small knobs under Time, Size, Shape and Pitch. On Beads these are attenuverters; with nothing patched they set randomness. Clockwise: a new random value for every grain. Counter-clockwise: the value jumps only occasionally. Centre: off. |
 
 ## Texture controls
@@ -62,7 +63,7 @@ reported to the host.
 | **Feedback** | 0 to 100% | How much of the grain output is recorded back into the buffer. Soft-limited, so it can run hot. |
 | **Dry/Wet** | 0 to 100% | Beads' crossfade law (dry 0.75×, wet 1.5× at the extremes). |
 | **Reverb** | 0 to 100% | Amount and decay together. The reverb sits after the dry/wet mix, so it also works on the dry signal. |
-| **Soften** | 0 to 100% | **Rain:** darkens and warms the grains only: light saturation, then a 12 dB/octave low-pass from 16 kHz down to about 2.5 kHz. Default 25%. |
+| **Soften** | 0 to 100% | **Rain** (Grain Character): darkens and warms the grains only: light saturation, then a 12 dB/octave low-pass from 16 kHz down to about 2.5 kHz. Default 25%. |
 
 ## Buttons
 
@@ -129,7 +130,7 @@ Input and Auto alone. Hosts also see the factory presets as programs.
 | Control | Range | What it does |
 | --- | --- | --- |
 | **Auto Gain** | on/off | Beads' automatic input level (off by default so the dry signal stays put in a mix). |
-| **Input Gain** | 0 to +32 dB | Beads' manual input gain, 1× to 40×. |
+| **Input Gain** | 0 to +32 dB | Beads' manual input gain, 1× to 40×, along the module's curve (knob position to the fourth power), so most of the travel is fine control near unity. |
 | **Output Gain** | −24 to +12 dB | Default +2.5 dB, which makes up Beads' 0.75 dry gain so 0% wet with no reverb is unity. |
 
 ## Not ported (yet)

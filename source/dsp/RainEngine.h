@@ -85,6 +85,7 @@ struct RainParams
     bool overlap = false;
     float reverse = 0.0f; // chance each grain plays backwards, 0 to 1
     float soften = 0.0f;  // darkens and warms the grains, 0 to 1
+    float randomPan = 0.0f; // 0 to 1: each grain lands at a random place in the stereo field
 
     // Modulator 1 is a sine wave, modulator 2 is smooth random drift.
     std::array<ModSettings, 2> mods {};
@@ -97,7 +98,7 @@ struct EngineMonitor
     static constexpr int kNumLevels = 2048;   // 16 s, the longest buffer
 
     // Effective knob positions after modulation and snapping, 0 to 1, indexed by
-    // ModTarget (pitch is mapped from -24..+24 semitones to 0..1).
+    // ModTarget (pitch as a PITCH knob position through Beads' knob law).
     std::array<std::atomic<float>, kNumModTargets> effective {};
     std::array<std::atomic<float>, 2> modValue {};
 

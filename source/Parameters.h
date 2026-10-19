@@ -40,6 +40,7 @@ namespace ParamID
     inline constexpr auto overlap     = "overlap";
     inline constexpr auto reverse     = "reverse";
     inline constexpr auto soften      = "soften";
+    inline constexpr auto randomPan   = "randompan";
 }
 
 // In front-panel order. Must match dsp::Quality.

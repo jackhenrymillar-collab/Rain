@@ -174,6 +174,40 @@ inline float consonance (float semis) noexcept
     }
 }
 
+// Beads' PITCH knob (beads/cv_reader.h, LAW_DETUNE). The knob runs from -1 to +1
+// and steps through 0, 1, 3, 4, 7, 12 and 24 semitones each way: each sixth of the
+// travel holds on one interval for its first third, then glides smoothly to the next.
+inline float detuneSemitones (float position) noexcept
+{
+    constexpr float intervals[8] = { 0.0f, 1.0f, 3.0f, 4.0f, 7.0f, 12.0f, 24.0f, 24.0f };
+    const float sign = position < 0.0f ? -1.0f : 1.0f;
+    const float detune = std::min (std::fabs (position), 1.0f) * 6.0f;
+    const int integral = std::min (static_cast<int> (detune), 6);
+    float fractional = std::max ((detune - static_cast<float> (integral) - 0.33333333f) * 1.5f, 0.0f);
+    fractional = fractional * fractional * (3.0f - 2.0f * fractional); // stmlib::SmoothStep
+    const float a = intervals[integral], b = intervals[integral + 1];
+    return (a + (b - a) * fractional) * sign;
+}
+
+// Knob position for a pitch in semitones: the middle of an interval's hold zone, or
+// the point on the glide between two intervals.
+inline float detunePosition (float semis) noexcept
+{
+    constexpr float intervals[7] = { 0.0f, 1.0f, 3.0f, 4.0f, 7.0f, 12.0f, 24.0f };
+    const float sign = semis < 0.0f ? -1.0f : 1.0f;
+    const float s = std::min (std::fabs (semis), 24.0f);
+    for (int i = 0; i < 7; ++i)
+        if (std::fabs (s - intervals[i]) < 1.0e-3f)
+            return sign * (i == 0 ? 0.0f : std::min (1.0f, (static_cast<float> (i) + 1.0f / 6.0f) / 6.0f));
+    float lo = 0.0f, hi = 1.0f; // detuneSemitones rises monotonically
+    for (int k = 0; k < 40; ++k)
+    {
+        const float mid = 0.5f * (lo + hi);
+        (detuneSemitones (mid) < s ? lo : hi) = mid;
+    }
+    return sign * 0.5f * (lo + hi);
+}
+
 inline int syncDivider (float density) noexcept
 {
     constexpr int ratios[] = { 1, 2, 3, 4, 6, 8, 12, 16 };

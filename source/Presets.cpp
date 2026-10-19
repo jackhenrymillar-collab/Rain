@@ -1,6 +1,7 @@
 #include "Presets.h"
 
 #include "Parameters.h"
+#include "dsp/Motion.h"
 
 namespace rain
 {
@@ -40,7 +41,7 @@ namespace
         { "Pentatonic Shower", { { P::size, 45 }, { P::density, 88 }, { P::pitchRandom, 70 }, { P::timeRandom, 40 },
                                  { P::scale, S::penta }, { P::reverb, 55 }, { P::dryWet, 65 } } },
         { "Minor Chimes", { { P::size, 38 }, { P::shape, 20 }, { P::density, 84 }, { P::pitchRandom, 60 },
-                            { P::scale, S::minorPenta }, { P::pitch, 12 }, { P::reverb, 65 }, { P::dryWet, 55 } } },
+                            { P::scale, S::minorPenta }, { P::pitch, dsp::detunePosition (12.0f) }, { P::reverb, 65 }, { P::dryWet, 55 } } },
         { "Tidal Drift", { { P::size, 60 }, { P::density, 86 }, { P::reverb, 50 }, { P::dryWet, 60 },
                            { P::mod1Target, T::time }, { P::mod1Rate, 0.08f }, { P::mod1Depth, 45 },
                            { P::mod2Target, T::size }, { P::mod2Rate, 0.3f }, { P::mod2Depth, 45 } } },
@@ -49,9 +50,9 @@ namespace
                                { P::mod1Target, T::reverb }, { P::mod1Rate, 0.05f }, { P::mod1Depth, 30 },
                                { P::reverb, 60 }, { P::dryWet, 70 } } },
         { "Velvet Cloud", { { P::overlap, 1 }, { P::size, 67 }, { P::shape, 62 }, { P::density, 88 }, { P::timeRandom, 35 },
-                            { P::soften, 65 }, { P::reverb, 55 }, { P::dryWet, 70 } } },
+                            { P::soften, 65 }, { P::randomPan, 40 }, { P::reverb, 55 }, { P::dryWet, 70 } } },
         { "Backwards Choir", { { P::overlap, 1 }, { P::size, 60 }, { P::shape, 70 }, { P::density, 86 }, { P::reverse, 50 },
-                               { P::pitchRandom, 55 }, { P::scale, S::major }, { P::soften, 45 }, { P::reverb, 65 }, { P::dryWet, 75 } } },
+                               { P::pitchRandom, 55 }, { P::scale, S::major }, { P::soften, 45 }, { P::randomPan, 60 }, { P::reverb, 65 }, { P::dryWet, 75 } } },
         { "Soft Focus", { { P::overlap, 1 }, { P::size, 50 }, { P::density, 30 }, { P::shape, 58 }, { P::timeRandom, 20 },
                           { P::soften, 50 }, { P::reverb, 40 }, { P::dryWet, 60 } } },
         { "Clocked Drops", { { P::sync, 1 }, { P::syncRate, R::sixteenth }, { P::density, 9 }, { P::size, 26 },
@@ -73,7 +74,7 @@ namespace
                            { P::timeRandom, 30 }, { P::pitchRandom, 15 }, { P::reverb, 75 }, { P::dryWet, 80 },
                            { P::mod2Target, T::shape }, { P::mod2Rate, 0.2f }, { P::mod2Depth, 25 } } },
         { "Night Drone", { { P::quality, Q::cleanTape }, { P::size, 96 }, { P::shape, 60 }, { P::density, 94 },
-                           { P::pitch, -12 }, { P::feedback, 45 }, { P::reverb, 80 }, { P::dryWet, 85 },
+                           { P::pitch, dsp::detunePosition (-12.0f) }, { P::feedback, 45 }, { P::reverb, 80 }, { P::dryWet, 85 },
                            { P::mod1Target, T::density }, { P::mod1Rate, 0.03f }, { P::mod1Depth, 8 } } },
     };
 

@@ -18,7 +18,8 @@ The files are unchanged from upstream, except that:
 - `beads/dsp/granular_player.h` and `delay_granular_player.h` add
   `Parameters::reverse_probability`. Left at its default (-1) Beads behaves as
   upstream; Rain sets it so each grain's direction is drawn at random and SIZE only
-  sets the length.
+  sets the length. They also add `Parameters::random_pan` (default 0, no effect),
+  which pulls each grain's pan towards a random position.
 - `beads/dsp/processor.h/.cc` add `MixParameters::soften` (default 0, no effect): a
   light saturation and 12 dB/octave low-pass on the grains before the dry/wet mix.
 

@@ -81,6 +81,7 @@ private:
     std::atomic<float>* overlap = nullptr;
     std::atomic<float>* reverse = nullptr;
     std::atomic<float>* soften = nullptr;
+    std::atomic<float>* randomPan = nullptr;
     std::array<std::atomic<float>*, 2> modRate {}, modDepth {}, modTarget {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RainProcessor)

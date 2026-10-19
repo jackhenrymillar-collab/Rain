@@ -36,6 +36,7 @@ RainProcessor::RainProcessor()
     overlap     = state.getRawParameterValue (ParamID::overlap);
     reverse     = state.getRawParameterValue (ParamID::reverse);
     soften      = state.getRawParameterValue (ParamID::soften);
+    randomPan   = state.getRawParameterValue (ParamID::randomPan);
     modRate     = { state.getRawParameterValue (ParamID::mod1Rate), state.getRawParameterValue (ParamID::mod2Rate) };
     modDepth    = { state.getRawParameterValue (ParamID::mod1Depth), state.getRawParameterValue (ParamID::mod2Depth) };
     modTarget   = { state.getRawParameterValue (ParamID::mod1Target), state.getRawParameterValue (ParamID::mod2Target) };
@@ -78,7 +79,7 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.time = time->load() * 0.01f;
     p.size = size->load() * 0.01f;
     p.shape = shape->load() * 0.01f;
-    p.pitchSemis = pitch->load();
+    p.pitchSemis = dsp::detuneSemitones (pitch->load());
     p.timeRandom = timeRandom->load() * 0.01f;
     p.sizeRandom = sizeRandom->load() * 0.01f;
     p.shapeRandom = shapeRandom->load() * 0.01f;
@@ -101,6 +102,7 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.overlap = overlap->load() > 0.5f;
     p.reverse = reverse->load() * 0.01f;
     p.soften = soften->load() * 0.01f;
+    p.randomPan = randomPan->load() * 0.01f;
     for (std::size_t m = 0; m < 2; ++m)
     {
         p.mods[m].rateHz = modRate[m]->load();

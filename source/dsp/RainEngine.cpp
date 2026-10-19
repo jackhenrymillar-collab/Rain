@@ -261,7 +261,7 @@ void RainEngine::applyMotion (RainParams& p, float dt)
 
     for (int t = 1; t < kNumModTargets; ++t)
     {
-        const float v = t == static_cast<int> (ModTarget::pitch) ? (p.pitchSemis + 24.0f) / 48.0f : *targets[t];
+        const float v = t == static_cast<int> (ModTarget::pitch) ? 0.5f * (detunePosition (p.pitchSemis) + 1.0f) : *targets[t];
         mon.effective[static_cast<std::size_t> (t)].store (v, std::memory_order_relaxed);
     }
 }
@@ -303,7 +303,7 @@ void RainEngine::runBeadsBlock()
                                   { &q.timeRandom, &smoothed.timeRandom }, { &q.sizeRandom, &smoothed.sizeRandom },
                                   { &q.shapeRandom, &smoothed.shapeRandom }, { &q.pitchRandom, &smoothed.pitchRandom },
                                   { &q.feedback, &smoothed.feedback }, { &q.dryWet, &smoothed.dryWet }, { &q.reverb, &smoothed.reverb },
-                                  { &q.reverse, &smoothed.reverse }, { &q.soften, &smoothed.soften } })
+                                  { &q.reverse, &smoothed.reverse }, { &q.soften, &smoothed.soften }, { &q.randomPan, &smoothed.randomPan } })
     {
         *state += kKnobSmoothing * (*target - *state);
         *target = *state;
@@ -341,6 +341,7 @@ void RainEngine::runBeadsBlock()
     p.pitch = knob (q.pitchSemis, q.pitchRandom);
     p.monophonic_mode = false;
     p.reverse_probability = std::clamp (q.reverse, 0.0f, 1.0f);
+    p.random_pan = std::clamp (q.randomPan, 0.0f, 1.0f);
 
     if (q.scale != Scale::off)
     {

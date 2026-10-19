@@ -201,7 +201,15 @@ OrbKnob::OrbKnob (AudioProcessorValueTreeState& state, const String& paramID, co
     nameLabel.setInterceptsMouseClicks (false, false);
     valueLabel.setInterceptsMouseClicks (false, false);
 
-    if (size == Size::large)
+    if (size == Size::medium)
+    {
+        nameLabel.setFont (Fonts::caps (14.5f, 0.18f));
+        nameLabel.setColour (Label::textColourId, Theme::textSoft);
+        nameLabel.setJustificationType (Justification::centred);
+        valueLabel.setFont (Fonts::sans (17.0f));
+        valueLabel.setJustificationType (Justification::centred);
+    }
+    else if (size == Size::large)
     {
         nameLabel.setFont (Fonts::caps (17.5f, 0.2f));
         nameLabel.setColour (Label::textColourId, Theme::textSoft);
@@ -270,6 +278,15 @@ void OrbKnob::resized()
         nameLabel.setBounds (b.removeFromTop (22));
         b.removeFromTop (4);
         valueLabel.setBounds (b.removeFromTop (24));
+    }
+    else if (size == Size::medium)
+    {
+        // Medium knob: a smaller orb with name and value underneath, like the large ones.
+        slider.setBounds (b.removeFromTop (62).withSizeKeepingCentre (62, 62));
+        b.removeFromTop (4);
+        nameLabel.setBounds (b.removeFromTop (18));
+        b.removeFromTop (2);
+        valueLabel.setBounds (b.removeFromTop (22));
     }
     else
     {
@@ -438,7 +455,8 @@ void SkyBackground::renderStatic()
     softEllipse (g, { 760.0f, bottom - 120.0f, 520.0f, 210.0f }, Colour (170, 176, 230).withAlpha (0.18f));
 
     // Glass panels behind the motion and tempo rows.
-    for (const auto& panel : { Rectangle<float> (40.0f, 604.0f, 528.0f, 130.0f), Rectangle<float> (588.0f, 604.0f, 542.0f, 130.0f) })
+    for (const auto& panel : { Rectangle<float> (40.0f, 604.0f, 300.0f, 130.0f), Rectangle<float> (358.0f, 604.0f, 506.0f, 130.0f),
+                               Rectangle<float> (882.0f, 604.0f, 248.0f, 130.0f) })
     {
         g.setColour (Colour (18, 24, 66).withAlpha (0.38f));
         g.fillRoundedRectangle (panel, 12.0f);
@@ -461,8 +479,9 @@ void SkyBackground::renderStatic()
     g.drawText ("MODE", Rectangle<float> (48.0f, 118.0f, 300.0f, 20.0f), Justification::centredLeft, false);
     g.drawText ("GRAINS", Rectangle<float> (66.0f, 326.0f, 300.0f, 18.0f), Justification::centredLeft, false);
     g.drawText ("TEXTURE", Rectangle<float> (66.0f + 4.0f * 135.25f, 326.0f, 300.0f, 18.0f), Justification::centredLeft, false);
-    g.drawText ("MOTION", Rectangle<float> (56.0f, 580.0f, 300.0f, 18.0f), Justification::centredLeft, false);
-    g.drawText ("TEMPO & SCALE", Rectangle<float> (604.0f, 580.0f, 300.0f, 18.0f), Justification::centredLeft, false);
+    g.drawText ("GRAIN CHARACTER", Rectangle<float> (56.0f, 580.0f, 280.0f, 18.0f), Justification::centredLeft, false);
+    g.drawText ("MOTION", Rectangle<float> (374.0f, 580.0f, 300.0f, 18.0f), Justification::centredLeft, false);
+    g.drawText ("TEMPO & SCALE", Rectangle<float> (898.0f, 580.0f, 230.0f, 18.0f), Justification::centredLeft, false);
 }
 
 void SkyBackground::paint (Graphics& g)

@@ -305,3 +305,26 @@ TEST_CASE ("Consonance favours the root, fifth and thirds")
     CHECK (consonance (7.0f) > consonance (4.0f));
     CHECK (consonance (4.0f) > consonance (2.0f));
 }
+
+TEST_CASE ("PITCH follows the Beads knob law")
+{
+    // Each sixth of the travel holds an interval for its first third.
+    CHECK (detuneSemitones (0.0f) == 0.0f);
+    CHECK (detuneSemitones (0.05f) == 0.0f);
+    CHECK (detuneSemitones (1.0f / 6.0f + 0.05f) == Catch::Approx (1.0f));
+    CHECK (detuneSemitones (4.0f / 6.0f + 0.05f) == Catch::Approx (7.0f));
+    CHECK (detuneSemitones (5.0f / 6.0f + 0.05f) == Catch::Approx (12.0f));
+    CHECK (detuneSemitones (1.0f) == Catch::Approx (24.0f));
+    CHECK (detuneSemitones (-1.0f) == Catch::Approx (-24.0f));
+    // Halfway along a glide is halfway between the intervals.
+    CHECK (detuneSemitones ((4.0f + 1.0f / 3.0f + 1.0f / 3.0f) / 6.0f) == Catch::Approx (9.5f).margin (0.01f));
+    float previous = -100.0f;
+    for (int i = -100; i <= 100; ++i)
+    {
+        const float st = detuneSemitones (static_cast<float> (i) / 100.0f);
+        CHECK (st >= previous);
+        previous = st;
+    }
+    for (float st : { -24.0f, -12.0f, -7.0f, 0.0f, 1.0f, 3.0f, 4.0f, 5.5f, 7.0f, 12.0f, 18.0f, 24.0f })
+        CHECK (detuneSemitones (detunePosition (st)) == Catch::Approx (st).margin (0.01f));
+}

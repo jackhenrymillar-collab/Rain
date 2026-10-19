@@ -54,8 +54,8 @@ private:
     ui::GrainDisplay grainDisplay;
 
     // Knobs.
-    std::vector<std::unique_ptr<ui::OrbKnob>> knobs, smallKnobs;
-    juce::TextButton autoGainButton { "AUTO INPUT" };
+    std::vector<std::unique_ptr<ui::OrbKnob>> knobs, smallKnobs, characterKnobs;
+    juce::TextButton autoGainButton { "AUTO" };
     juce::TextButton overlapButton { "OVERLAP" };
 
     // Motion: two modulators.

@@ -30,6 +30,7 @@
 #define BEADS_DSP_GRANULAR_PLAYER_H_
 
 #include "stmlib/stmlib.h"
+#include "stmlib/utils/random.h"
 
 #include "beads/dsp/grain.h"
 #include "beads/dsp/randomized_parameter.h"
@@ -53,6 +54,9 @@ struct Parameters {
   // Rain: chance (0 to 1) that each grain plays backwards. Negative keeps the
   // module's behaviour, where SIZE left of 9 o'clock reverses every grain.
   float reverse_probability = -1.0f;
+  // Rain: 0 to 1, pulls each grain's pan towards a random position in the
+  // stereo field. At 0 Beads spreads grains as upstream.
+  float random_pan = 0.0f;
 };
 
 template<typename T, int num_grains>
@@ -127,6 +131,9 @@ class GranularPlayer {
     const float total_spread = ComputeSpread(trigger, p);
     const float pan_spread = 0.5f * num_active_grains * total_spread;
     *pan = BoundedRandomFloat(pan_spread);
+    if (p.random_pan > 0.0f) {
+      *pan += (stmlib::Random::GetFloat() - *pan) * p.random_pan;
+    }
   }
   
   inline T* new_grain() { return grain_priority_list_[0]; }

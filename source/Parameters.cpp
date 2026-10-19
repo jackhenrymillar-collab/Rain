@@ -81,7 +81,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
             return s < 1.0f ? String (roundToInt (s * 1000.0f)) + " ms" : String (s, 2) + " s";
         })));
     percent (ParamID::shape, "Shape", 60.0f);
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::pitch, v }, "Pitch", Range { -24.0f, 24.0f, 0.01f }, 0.0f, withLabel ("st", 1)));
+    // PITCH is the knob position (-1 to +1) and reads in semitones through Beads'
+    // knob law, which steps through 0, 1, 3, 4, 7, 12 and 24 semitones each way.
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::pitch, v }, "Pitch", Range { -1.0f, 1.0f, 0.0f }, 0.0f,
+        AudioParameterFloatAttributes()
+            .withLabel ("st")
+            .withStringFromValueFunction ([] (float x, int) {
+                const float st = dsp::detuneSemitones (x);
+                return (st > 0.05f ? "+" : "") + String (st, std::abs (st - std::round (st)) < 0.05f ? 0 : 1);
+            })
+            .withValueFromStringFunction ([] (const String& t) { return dsp::detunePosition (t.getFloatValue()); })));
     bipolar (ParamID::timeRandom, "Time Random");
     bipolar (ParamID::sizeRandom, "Size Random");
     bipolar (ParamID::shapeRandom, "Shape Random");
@@ -95,7 +104,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::seedLock, v }, "Seed Lock", true));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::quality, v }, "Quality", qualityNames(), 0));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::autoGain, v }, "Auto Gain", false));
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::inputGain, v }, "Input Gain", Range { 0.0f, 32.0f, 0.1f }, 0.0f, withLabel ("dB", 1)));
+    // Input gain: 1x to 40x (0 to 32 dB) along Beads' manual gain curve, the knob
+    // position to the fourth power (beads/gain_control.cc).
+    {
+        const float maxDb = 20.0f * std::log10 (40.0f);
+        Range gainRange (0.0f, maxDb,
+            [] (float, float, float p) { return 20.0f * std::log10 (1.0f + 39.0f * p * p * p * p); },
+            [] (float, float, float db) { return std::pow (std::max (0.0f, (std::pow (10.0f, db / 20.0f) - 1.0f) / 39.0f), 0.25f); });
+        layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::inputGain, v }, "Input Gain", gainRange, 0.0f, withLabel ("dB", 1)));
+    }
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::outputGain, v }, "Output Gain", Range { -24.0f, 12.0f, 0.1f }, 2.5f, withLabel ("dB", 1)));
 
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::mode, v }, "Mode", modeNames(), 0));
@@ -105,6 +122,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::overlap, v }, "Overlap", false));
     percent (ParamID::reverse, "Reverse", 0.0f);
     percent (ParamID::soften, "Soften", 25.0f);
+    percent (ParamID::randomPan, "Random Pan", 0.0f);
 
     // Modulator rates: 0.01 to 10 Hz, skewed so slow rates get most of the knob.
     auto rateRange = Range { 0.01f, 10.0f, 0.0f, 0.3f };
