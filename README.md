@@ -9,6 +9,18 @@ feedback, reverb, freeze and all four quality modes. The plugin uses JUCE's gene
 editor until the night-sky UI lands. See [docs/DESIGN.md](docs/DESIGN.md) for every
 control.
 
+## Download
+
+You don't have to build Rain yourself:
+
+- **Latest from main:** the [`latest` release](https://github.com/jackhenrymillar-collab/Rain/releases/tag/latest)
+  has `Rain-macOS.zip` (VST3 + AU, universal), rebuilt on every merge to main.
+- **Any pull request:** open its *Build and test* run under Checks and download the
+  `Rain-macOS` artifact (a zip containing `Rain-macOS.zip`).
+
+Install steps, including the one-time Gatekeeper command, are in
+[docs/INSTALL.md](docs/INSTALL.md).
+
 ## Building on macOS
 
 Requirements: Xcode 15 or later (command line tools are enough) and CMake 3.22+.
