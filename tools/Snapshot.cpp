@@ -1,6 +1,7 @@
 // Renders the editor to PNG frames while feeding the plugin audio, for screenshots
 // and panel checks without a host. Build with -DRAIN_BUILD_SNAPSHOT=ON.
-//   rain_snapshot <out-dir> [frames] [preset-index] [scale]
+//   rain_snapshot <out-dir> [frames] [preset-index] [scale] [bypass|-] [param=value ...]
+// Values are normalised 0 to 1, e.g. feedback=1 reverb=0.85.
 
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
@@ -23,6 +24,12 @@ int main (int argc, char** argv)
     // Optional 5th argument: "bypass" renders the panel with the moon switched off.
     if (argc > 5 && juce::String (argv[5]) == "bypass")
         rain.getState().getParameter (rain::ParamID::bypass)->setValueNotifyingHost (1.0f);
+    for (int i = 6; i < argc; ++i)
+    {
+        const juce::String arg (argv[i]);
+        if (auto* param = rain.getState().getParameter (arg.upToFirstOccurrenceOf ("=", false, false)))
+            param->setValueNotifyingHost (arg.fromFirstOccurrenceOf ("=", false, false).getFloatValue());
+    }
 
     const double fs = 48000.0;
     const int block = 512;

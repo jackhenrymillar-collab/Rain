@@ -96,6 +96,7 @@ if(RAIN_BUILD_PLUGIN)
         source/Presets.cpp
         source/ui/Components.cpp
         source/ui/GrainDisplay.cpp
+        source/ui/Sky.cpp
         source/ui/PresetBar.cpp
         source/ui/Theme.cpp)
 

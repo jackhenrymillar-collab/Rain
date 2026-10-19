@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Sky.h"
 #include "Theme.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -86,42 +87,6 @@ public:
 private:
     std::array<float, 48> history {};
     std::size_t head = 0;
-};
-
-// The sky: gradient, stars, moon behind a rain cloud and low mist are rendered once
-// to an image; the falling rain is drawn on top and animated by advance().
-class SkyBackground final : public juce::Component
-{
-public:
-    SkyBackground();
-
-    void paint (juce::Graphics&) override;
-    void resized() override;
-
-    void advance (float seconds);
-
-    // The sky follows the sound: rain (0 to 1) sets how heavily it rains, and
-    // night (0 to 1) darkens the sky and brings out nebulae and more stars.
-    void setWeather (float rain, float night) noexcept;
-    // Bypassed: the moon wanes to a crescent and the sky goes very dark.
-    void setBypassed (bool b) noexcept { eclipseTarget = b ? 1.0f : 0.0f; }
-
-    // Where the moon sits, in design coordinates (it is also the bypass switch).
-    static juce::Rectangle<float> moonBounds() noexcept { return { 1004.0f, 22.0f, 100.0f, 100.0f }; }
-
-private:
-    void renderStatic();
-
-    struct Streak { float x, phase, length, alpha, speed; };
-
-    // sky: gradient, stars and mist. night: darkening, nebulae and extra stars,
-    // faded in by `night`. decor: moon, panels, wordmark and headings, always on top.
-    juce::Image sky, nightSky, decor;
-    std::array<Streak, 260> streaks {};
-    float time = 0.0f;
-    float rainTarget = 0.5f, rainAmount = 0.5f;
-    float nightTarget = 0.0f, nightAmount = 0.0f;
-    float eclipseTarget = 0.0f, eclipseAmount = 0.0f;
 };
 
 // An invisible switch over the moon: click to bypass Rain.

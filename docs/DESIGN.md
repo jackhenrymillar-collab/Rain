@@ -51,7 +51,7 @@ reported to the host.
 | **Overlap** | on/off | **Rain:** grain length follows the grain rate (Density, and the tempo when synced), so a set number of grains always crossfade into each other and the cloud has no gaps. |
 | **Reverse** | 0 to 100% | **Rain** (Grain Character): the chance each grain plays backwards. 50% mixes swells and forward grains; 100% is fully backwards. Not used in Delay mode. |
 | **Random Pan** | 0 to 100% | **Rain** (Grain Character): pulls each grain towards a random point in the stereo field. At 0 grains spread as on the module (wider with more randomness and more overlapping grains); at 100% each lands anywhere from hard left to hard right. |
-| **Shape** | 0 to 100% | Grain envelope: square at the left, a sharp attack with a decay at 1/3, a smooth bell around 2/3, and reversed (slow swell, sharp end) at the right. |
+| **Shape** | 0 to 100% | Grain envelope: square at the left, a sharp attack with a decay at 1/3, a smooth bell around 2/3, and reversed (slow swell, sharp end) at the right. On the panel, the moon's glow blooms, becoming a wide halo ring near the top of the range. |
 | **Pitch** | −24 to +24 st | Grain playback pitch, with the module's knob law: each way from noon the knob steps through 0, 1, 3, 4, 7, 12 and 24 semitones, holding each interval for the first third of its sixth of the travel and gliding smoothly to the next. Pitch modulation and Pitch Random are continuous on top. |
 | **Random** (×4) | −100 to +100% | The small knobs under Time, Size, Shape and Pitch. On Beads these are attenuverters; with nothing patched they set randomness. Clockwise: a new random value for every grain. Counter-clockwise: the value jumps only occasionally. Centre: off. |
 
@@ -59,10 +59,10 @@ reported to the host.
 
 | Control | Range | What it does |
 | --- | --- | --- |
-| **Density** | 0 to 100% | Centre (48 to 52%) is off. Left of centre, grains fire at regular intervals, faster as you turn left. Right of centre, they fire at random, denser as you turn right. Up to about 130 grains per second. On the panel, the rain falls harder the further Density is from noon. |
-| **Feedback** | 0 to 100% | How much of the grain output is recorded back into the buffer. Soft-limited, so it can run hot. |
+| **Density** | 0 to 100% | Centre (48 to 52%) is off. Left of centre, grains fire at regular intervals, faster as you turn left. Right of centre, they fire at random, denser as you turn right. Up to about 130 grains per second. On the panel, the rain falls harder and more stars come out the further Density is from noon. |
+| **Feedback** | 0 to 100% | How much of the grain output is recorded back into the buffer. Soft-limited, so it can run hot. On the panel, it brings forked lightning (rare at first, about one strike every 3 to 4 s at full) that leaves an afterglow, and makes the stars brighter. |
 | **Dry/Wet** | 0 to 100% | Beads' crossfade law (dry 0.75×, wet 1.5× at the extremes). |
-| **Cloud** | 0 to 100% | Beads' reverb (Rain calls it Cloud): amount and decay together. It sits after the dry/wet mix, so it also works on the dry signal. On the panel, it also deepens the night sky, bringing out nebulae and more stars. |
+| **Cloud** | 0 to 100% | Beads' reverb (Rain calls it Cloud): amount and decay together. It sits after the dry/wet mix, so it also works on the dry signal. On the panel, it takes the sky much darker, with vast nebulae, many more stars and aurora low down; the mist clears, the rain fades a little and the moon wanes to a crescent whose dark side shows its craters. |
 | **Soften** | 0 to 100% | **Rain** (Grain Character): darkens and warms the grains only: light saturation, then a 12 dB/octave low-pass from 16 kHz down to about 2.5 kHz. Default 25%. |
 
 ## Buttons
@@ -144,10 +144,11 @@ Input and Auto alone. Hosts also see the factory presets as programs.
 
 Built in `source/PluginEditor.cpp` and `source/ui/`, in Overcast's night-sky style:
 preset bar, Grains/Delay switch, the grain display (`ui/GrainDisplay`: the buffer
-waveform, Time marker, grain envelopes and the density lane, drawn with Beads' own
+waveform, Time marker and grain envelopes, drawn with Beads' own
 laws for grain length, envelope and trigger rate), eight large knobs, the Random
 row with Input, Output and Auto, the Motion and Tempo & Scale panels, and Freeze,
-Seed, Seed Lock and Quality along the bottom. The layout is a fixed 1170 x 860
+Seed, Seed Lock and Quality along the bottom. The sky behind it (`ui/Sky`) follows
+Density, Shape, Feedback and Cloud, and the moon is the bypass switch. The layout is a fixed 1170 x 860
 design scaled to the window.
 
 `tools/Snapshot.cpp` (`-DRAIN_BUILD_SNAPSHOT=ON`) renders the panel to PNG frames

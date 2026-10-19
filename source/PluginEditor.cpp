@@ -345,12 +345,15 @@ void RainEditor::updateLiveValues()
 void RainEditor::tick()
 {
     constexpr float dt = 1.0f / 30.0f;
-    // The sky follows DENSITY (how hard it rains) and REVERB (how deep the night).
+    // The sky follows the sound: DENSITY (rain, stars), CLOUD (deep night), SHAPE (moon halo)
+    // and FEEDBACK (lightning, brighter stars).
     {
         const auto& mon = processor.getMonitor();
         const float d = mon.effective[static_cast<size_t> (dsp::ModTarget::density)].load();
         const float r = mon.effective[static_cast<size_t> (dsp::ModTarget::reverb)].load();
-        sky.setWeather (jlimit (0.0f, 1.0f, std::abs (d - 0.5f) * 2.0f), r);
+        const float shape = mon.effective[static_cast<size_t> (dsp::ModTarget::shape)].load();
+        const float fb = mon.effective[static_cast<size_t> (dsp::ModTarget::feedback)].load();
+        sky.setWeather ({ jlimit (0.0f, 1.0f, std::abs (d - 0.5f) * 2.0f), r, shape, fb });
     }
     sky.setBypassed (moon->isOn());
     sky.advance (dt);
