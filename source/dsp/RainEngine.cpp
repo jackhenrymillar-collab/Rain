@@ -151,6 +151,10 @@ void RainEngine::prepare (double sampleRate, int /*maxBlockSize*/)
     smoothedValid = false;
 
     fifo.assign (kFifoSize, beads::FloatFrame { 0.0f, 0.0f });
+    dryDelay.assign (kDryDelaySize, beads::FloatFrame { 0.0f, 0.0f });
+    dryWrite = 0;
+    bypassStep = static_cast<float> (1.0 / (0.02 * fs));
+    bypassMix = params.bypass ? 1.0f : 0.0f;
     outputGain.prepare (fs, 20.0f);
     outputGain.snapTo (std::pow (10.0f, params.outputGainDb / 20.0f));
     prepared = true;
@@ -171,6 +175,8 @@ void RainEngine::reset()
     outputGain.snapTo (outputGain.getTarget());
     subsonic.reset();
     limiter.reset();
+    std::fill (dryDelay.begin(), dryDelay.end(), beads::FloatFrame { 0.0f, 0.0f });
+    bypassMix = params.bypass ? 1.0f : 0.0f;
     smoothedValid = false;
     wave.reset();
     drift.reset();
@@ -420,8 +426,14 @@ void RainEngine::process (float* left, float* right, int numSamples)
     if (! prepared)
         return;
 
+    const float bypassTarget = params.bypass ? 1.0f : 0.0f;
+    const auto dryLag = static_cast<std::size_t> (std::clamp (latency, 0, static_cast<int> (kDryDelaySize) - 1));
     for (int i = 0; i < numSamples; ++i)
     {
+        dryDelay[dryWrite] = { left[i], right[i] };
+        const beads::FloatFrame dry = dryDelay[(dryWrite - dryLag) & (kDryDelaySize - 1)];
+        dryWrite = (dryWrite + 1) & (kDryDelaySize - 1);
+
         const beads::FloatFrame x { left[i] * kHeadroom, right[i] * kHeadroom };
         beatPos += bpm / (60.0 * fs);
         toBeads->push (x, [this] (const beads::FloatFrame& f) {
@@ -444,8 +456,11 @@ void RainEngine::process (float* left, float* right, int numSamples)
         float l = subsonic.process (y.l, 0) * g;
         float r = subsonic.process (y.r, 1) * g;
         limiter.process (l, r);
-        left[i] = l;
-        right[i] = r;
+        if (bypassMix != bypassTarget)
+            bypassMix = bypassTarget > bypassMix ? std::min (bypassTarget, bypassMix + bypassStep)
+                                                 : std::max (bypassTarget, bypassMix - bypassStep);
+        left[i] = l + bypassMix * (dry.l - l);
+        right[i] = r + bypassMix * (dry.r - r);
     }
 
     mon.bpm.store (static_cast<float> (bpm), std::memory_order_relaxed);

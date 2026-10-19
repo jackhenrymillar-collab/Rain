@@ -41,6 +41,7 @@ namespace ParamID
     inline constexpr auto reverse     = "reverse";
     inline constexpr auto soften      = "soften";
     inline constexpr auto randomPan   = "randompan";
+    inline constexpr auto bypass      = "bypass";
 }
 
 // In front-panel order. Must match dsp::Quality.

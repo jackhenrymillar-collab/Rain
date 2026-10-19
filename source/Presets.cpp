@@ -106,7 +106,8 @@ PresetManager::~PresetManager()
 
 bool PresetManager::affectsPreset (const String& id)
 {
-    return id != ParamID::freeze && id != ParamID::seed && id != ParamID::inputGain && id != ParamID::autoGain;
+    return id != ParamID::freeze && id != ParamID::seed && id != ParamID::inputGain && id != ParamID::autoGain
+        && id != ParamID::bypass;
 }
 
 int PresetManager::numFactory() const noexcept

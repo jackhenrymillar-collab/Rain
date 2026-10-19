@@ -64,6 +64,8 @@ RainEditor::RainEditor (RainProcessor& p)
     tooltips.setLookAndFeel (&lookAndFeel);
     addAndMakeVisible (content);
     content.addAndMakeVisible (sky);
+    moon = std::make_unique<ui::MoonSwitch> (state, ParamID::bypass);
+    content.addAndMakeVisible (*moon);
     content.addAndMakeVisible (presetBar);
     content.addAndMakeVisible (saveButton);
     saveButton.getProperties().set ("pill", true);
@@ -350,6 +352,7 @@ void RainEditor::tick()
         const float r = mon.effective[static_cast<size_t> (dsp::ModTarget::reverb)].load();
         sky.setWeather (jlimit (0.0f, 1.0f, std::abs (d - 0.5f) * 2.0f), r);
     }
+    sky.setBypassed (moon->isOn());
     sky.advance (dt);
     grainDisplay.advance (dt);
     presetBar.refresh();
@@ -366,6 +369,7 @@ void RainEditor::resized()
 void RainEditor::layoutContent()
 {
     sky.setBounds (content.getLocalBounds());
+    moon->setBounds (ui::SkyBackground::moonBounds().toNearestInt());
     presetBar.setBounds (330, 32, 470, 56);
     saveButton.setBounds (812, 41, 92, 38);
 

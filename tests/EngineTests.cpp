@@ -238,3 +238,50 @@ TEST_CASE ("Hot input stays below full scale and the low end stays clean")
     CHECK (peak <= 0.977f);
     CHECK (10.0 * std::log10 (high / total) < -60.0);
 }
+
+TEST_CASE ("Bypass passes the dry input through, lined up with the latency")
+{
+    const double fs = 48000.0;
+    RainEngine e;
+    RainParams p;
+    p.bypass = true;
+    p.dryWet = 1.0f;
+    e.setParams (p);
+    e.prepare (fs, 256);
+    const int lat = e.latencySamples();
+    const auto n = static_cast<std::size_t> (fs);
+    std::vector<float> inL (n), l (n), r (n);
+    for (std::size_t i = 0; i < n; ++i)
+        inL[i] = l[i] = r[i] = 0.5f * static_cast<float> (std::sin (2.0 * 3.141592653589793 * 440.0 * static_cast<double> (i) / fs));
+    for (std::size_t i = 0; i < n; i += 256)
+        e.process (l.data() + i, r.data() + i, static_cast<int> (std::min<std::size_t> (256, n - i)));
+    float worst = 0.0f;
+    for (std::size_t i = static_cast<std::size_t> (lat) + 1000; i < n; ++i)
+        worst = std::max (worst, std::abs (l[i] - inL[i - static_cast<std::size_t> (lat)]));
+    CHECK (worst < 1.0e-6f);
+}
+
+TEST_CASE ("Bypass fades in and out without clicks")
+{
+    const double fs = 48000.0;
+    RainEngine e;
+    RainParams p;
+    p.dryWet = 1.0f;
+    e.setParams (p);
+    e.prepare (fs, 256);
+    const auto n = static_cast<std::size_t> (fs * 2.0);
+    std::vector<float> l (n), r (n);
+    for (std::size_t i = 0; i < n; ++i)
+        l[i] = r[i] = 0.3f * static_cast<float> (std::sin (2.0 * 3.141592653589793 * 220.0 * static_cast<double> (i) / fs));
+    for (std::size_t i = 0; i < n; i += 256)
+    {
+        p.bypass = (i / 256) % 40 >= 20; // toggle every ~0.1 s
+        e.setParams (p);
+        e.process (l.data() + i, r.data() + i, static_cast<int> (std::min<std::size_t> (256, n - i)));
+    }
+    REQUIRE (allFinite (l));
+    float biggestStep = 0.0f;
+    for (std::size_t i = 1; i < n; ++i)
+        biggestStep = std::max (biggestStep, std::abs (l[i] - l[i - 1]));
+    CHECK (biggestStep < 0.2f);
+}

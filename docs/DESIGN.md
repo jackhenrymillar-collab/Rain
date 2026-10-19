@@ -69,6 +69,7 @@ reported to the host.
 
 | Control | What it does |
 | --- | --- |
+| **Moon (bypass)** | **Rain:** click the moon to bypass Rain. The output crossfades (20 ms) to the dry input, delayed to line up with Rain's latency, while Rain keeps recording underneath. The moon wanes to a crescent and the sky goes very dark. The host's bypass switch is the same control. |
 | **Freeze** | Stops recording. Grains keep playing the held buffer. |
 | **Seed** | Fires a grain while held. |
 | **Seed Lock** | **Rain:** on by default, which is the module's power-up state: grains run on their own at the Density rate. Turn it off and grains only play while Seed is held. (On the module, a long press of SEED toggles this.) |

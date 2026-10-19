@@ -20,6 +20,9 @@ int main (int argc, char** argv)
     std::unique_ptr<juce::AudioProcessor> plugin (createPluginFilter());
     auto& rain = dynamic_cast<rain::RainProcessor&> (*plugin);
     rain.getPresets().loadFactory (preset);
+    // Optional 5th argument: "bypass" renders the panel with the moon switched off.
+    if (argc > 5 && juce::String (argv[5]) == "bypass")
+        rain.getState().getParameter (rain::ParamID::bypass)->setValueNotifyingHost (1.0f);
 
     const double fs = 48000.0;
     const int block = 512;

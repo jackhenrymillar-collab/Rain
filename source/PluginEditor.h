@@ -44,6 +44,7 @@ private:
 
     juce::Component content;
     ui::SkyBackground sky;
+    std::unique_ptr<ui::MoonSwitch> moon;
     ui::PresetBar presetBar;
     juce::TextButton saveButton { "SAVE" };
 

@@ -123,6 +123,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     percent (ParamID::reverse, "Reverse", 0.0f);
     percent (ParamID::soften, "Soften", 25.0f);
     percent (ParamID::randomPan, "Random Pan", 0.0f);
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::bypass, v }, "Bypass", false));
 
     // Modulator rates: 0.01 to 10 Hz, skewed so slow rates get most of the knob.
     auto rateRange = Range { 0.01f, 10.0f, 0.0f, 0.3f };

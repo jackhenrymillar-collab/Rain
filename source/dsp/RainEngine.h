@@ -87,6 +87,10 @@ struct RainParams
     float soften = 0.0f;  // darkens and warms the grains, 0 to 1
     float randomPan = 0.0f; // 0 to 1: each grain lands at a random place in the stereo field
 
+    // Bypass: the output crossfades (20 ms) to the dry input, delayed by the reported
+    // latency so it lines up. Rain keeps recording underneath, so it comes back warm.
+    bool bypass = false;
+
     // Modulator 1 is a sine wave, modulator 2 is smooth random drift.
     std::array<ModSettings, 2> mods {};
 };
@@ -217,6 +221,12 @@ private:
     EngineMonitor mon;
 
     Smoother outputGain;
+
+    // Bypass: a delay line for the dry signal and the crossfade position (1 = dry).
+    static constexpr std::size_t kDryDelaySize = 16384; // power of two
+    std::vector<beads::FloatFrame> dryDelay;
+    std::size_t dryWrite = 0;
+    float bypassMix = 0.0f, bypassStep = 0.001f;
     Quality configured = Quality::digital;
     RainParams params;
 };

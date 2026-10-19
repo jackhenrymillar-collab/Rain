@@ -37,6 +37,7 @@ RainProcessor::RainProcessor()
     reverse     = state.getRawParameterValue (ParamID::reverse);
     soften      = state.getRawParameterValue (ParamID::soften);
     randomPan   = state.getRawParameterValue (ParamID::randomPan);
+    bypass      = state.getRawParameterValue (ParamID::bypass);
     modRate     = { state.getRawParameterValue (ParamID::mod1Rate), state.getRawParameterValue (ParamID::mod2Rate) };
     modDepth    = { state.getRawParameterValue (ParamID::mod1Depth), state.getRawParameterValue (ParamID::mod2Depth) };
     modTarget   = { state.getRawParameterValue (ParamID::mod1Target), state.getRawParameterValue (ParamID::mod2Target) };
@@ -103,6 +104,7 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.reverse = reverse->load() * 0.01f;
     p.soften = soften->load() * 0.01f;
     p.randomPan = randomPan->load() * 0.01f;
+    p.bypass = bypass->load() > 0.5f;
     for (std::size_t m = 0; m < 2; ++m)
     {
         p.mods[m].rateHz = modRate[m]->load();

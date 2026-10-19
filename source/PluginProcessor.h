@@ -43,6 +43,8 @@ public:
 
     juce::AudioProcessorValueTreeState& getState() noexcept { return state; }
     PresetManager& getPresets() noexcept { return presets; }
+    // The host's bypass switch is Rain's own (the moon), so both stay in step.
+    juce::AudioProcessorParameter* getBypassParameter() const override { return state.getParameter (ParamID::bypass); }
     const dsp::EngineMonitor& getMonitor() const noexcept { return engine.monitor(); }
 
 private:
@@ -82,6 +84,7 @@ private:
     std::atomic<float>* reverse = nullptr;
     std::atomic<float>* soften = nullptr;
     std::atomic<float>* randomPan = nullptr;
+    std::atomic<float>* bypass = nullptr;
     std::array<std::atomic<float>*, 2> modRate {}, modDepth {}, modTarget {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RainProcessor)

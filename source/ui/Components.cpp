@@ -398,6 +398,10 @@ void SkyBackground::advance (float seconds)
     const float k = 1.0f - std::exp (-seconds / 0.5f);
     rainAmount += k * (rainTarget - rainAmount);
     nightAmount += k * (nightTarget - nightAmount);
+    const float ke = 1.0f - std::exp (-seconds / 0.25f);
+    eclipseAmount += ke * (eclipseTarget - eclipseAmount);
+    if (std::abs (eclipseAmount - eclipseTarget) < 0.002f)
+        eclipseAmount = eclipseTarget;
     repaint();
 }
 
@@ -538,7 +542,29 @@ void SkyBackground::paint (Graphics& g)
         g.drawImage (nightSky, bounds);
         g.setOpacity (1.0f);
     }
+    const float sxs = bounds.getWidth() / static_cast<float> (Theme::designWidth);
+    if (eclipseAmount > 0.0f)
+    {
+        // Bypassed: a very dark sky behind the panel...
+        g.setColour (Colour (1, 2, 10).withAlpha (0.72f * eclipseAmount));
+        g.fillRect (bounds);
+    }
     g.drawImage (decor, bounds);
+    if (eclipseAmount > 0.0f)
+    {
+        // ...and the moon wanes to a crescent: the earth's shadow slides across it,
+        // leaving a sliver lit on the right, and the halo fades.
+        const auto moon = moonBounds() * sxs;
+        softEllipse (g, moon.expanded (60.0f * sxs), Colour (1, 2, 10).withAlpha (0.6f * eclipseAmount));
+        Path disc;
+        disc.addEllipse (moon);
+        g.saveState();
+        g.reduceClipRegion (disc);
+        const float shift = moon.getWidth() * (0.9f - 0.68f * eclipseAmount);
+        g.setColour (Colour (6, 8, 26).withAlpha (std::min (1.0f, 1.4f * eclipseAmount)));
+        g.fillEllipse (moon.translated (-shift, -0.06f * moon.getHeight()).expanded (1.0f));
+        g.restoreState();
+    }
 
     // Falling rain, slanted like the mockup: a drizzle with DENSITY at noon, a
     // downpour at either end.
@@ -555,6 +581,32 @@ void SkyBackground::paint (Graphics& g)
         g.setColour (Colour (210, 222, 255).withAlpha (s.alpha));
         g.drawLine (x * sx, y * sy, (x - s.length * 0.17f) * sx, (y + s.length) * sy, 1.0f);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Moon switch
+// ---------------------------------------------------------------------------
+
+MoonSwitch::MoonSwitch (AudioProcessorValueTreeState& state, const String& paramID)
+    : attachment (*state.getParameter (paramID), [this] (float v) { on = v > 0.5f; })
+{
+    attachment.sendInitialUpdate();
+    setMouseCursor (MouseCursor::PointingHandCursor);
+    setTooltip ("Click the moon to bypass Rain (dry sound only)");
+}
+
+bool MoonSwitch::hitTest (int x, int y)
+{
+    // Only the disc itself is clickable.
+    const auto c = getLocalBounds().toFloat().getCentre();
+    const float r = static_cast<float> (getWidth()) * 0.5f;
+    return Point<float> (static_cast<float> (x), static_cast<float> (y)).getDistanceFrom (c) <= r;
+}
+
+void MoonSwitch::mouseUp (const MouseEvent& e)
+{
+    if (e.mouseWasClicked() && hitTest (e.x, e.y))
+        attachment.setValueAsCompleteGesture (on ? 0.0f : 1.0f);
 }
 
 } // namespace rain::ui

@@ -103,6 +103,11 @@ public:
     // The sky follows the sound: rain (0 to 1) sets how heavily it rains, and
     // night (0 to 1) darkens the sky and brings out nebulae and more stars.
     void setWeather (float rain, float night) noexcept;
+    // Bypassed: the moon wanes to a crescent and the sky goes very dark.
+    void setBypassed (bool b) noexcept { eclipseTarget = b ? 1.0f : 0.0f; }
+
+    // Where the moon sits, in design coordinates (it is also the bypass switch).
+    static juce::Rectangle<float> moonBounds() noexcept { return { 1004.0f, 22.0f, 100.0f, 100.0f }; }
 
 private:
     void renderStatic();
@@ -116,6 +121,22 @@ private:
     float time = 0.0f;
     float rainTarget = 0.5f, rainAmount = 0.5f;
     float nightTarget = 0.0f, nightAmount = 0.0f;
+    float eclipseTarget = 0.0f, eclipseAmount = 0.0f;
+};
+
+// An invisible switch over the moon: click to bypass Rain.
+class MoonSwitch final : public juce::Component,
+                         public juce::SettableTooltipClient
+{
+public:
+    MoonSwitch (juce::AudioProcessorValueTreeState& state, const juce::String& paramID);
+    bool hitTest (int x, int y) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    bool isOn() const noexcept { return on; }
+
+private:
+    juce::ParameterAttachment attachment;
+    bool on = false;
 };
 
 } // namespace rain::ui
