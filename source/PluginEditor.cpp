@@ -379,7 +379,7 @@ void RainEditor::layoutContent()
     for (int i = 0; i < 2; ++i)
         modeChips[static_cast<size_t> (i)].setBounds (kLeft + i * 142, 252, 130, 44);
     overlapButton.setBounds (kLeft + 2 * 142 + 18, 255, 140, 38);
-    grainDisplay.setBounds (596, 128, 526, 176);
+    grainDisplay.setBounds (635, 141, 447, 150); // 85% of the original 526 x 176, same centre
 
     // Knob rows.
     for (size_t i = 0; i < knobs.size(); ++i)

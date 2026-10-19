@@ -214,8 +214,9 @@ void GrainDisplay::paint (Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
     const float W = bounds.getWidth(), H = bounds.getHeight();
-    // No frame or labels: the buffer and grains float on the sky.
-    const float left = 14.0f, right = W - 15.0f, top = 12.0f, bottom = H - 12.0f;
+    // No frame or labels: the buffer and grains float on the sky, fading into it at
+    // the edges (older audio on the left drifts off like mist).
+    const float left = 10.0f, right = W - 12.0f, top = 10.0f, bottom = H - 10.0f;
     const float plotW = right - left, mid = (top + bottom) * 0.5f;
     const float buffer = monitor.bufferSeconds.load();
     const bool frozen = param (ParamID::freeze) > 0.5f;
@@ -226,11 +227,19 @@ void GrainDisplay::paint (Graphics& g)
     const float time = e[static_cast<size_t> (dsp::ModTarget::time)].load();
     const float density = e[static_cast<size_t> (dsp::ModTarget::density)].load();
 
-    // Buffer waveform: newest on the right.
+    // 0 at the edges, 1 inside: a long fade on the left, a short one on the right.
+    const auto edgeFade = [&] (float x) {
+        const float a = jlimit (0.0f, 1.0f, (x - left) / (0.22f * plotW));
+        const float b = jlimit (0.0f, 1.0f, (right - x) / (0.04f * plotW));
+        return a * a * (3.0f - 2.0f * a) * b;
+    };
+    const Colour mist (176, 186, 246);
+
+    // Buffer waveform: newest on the right, drawn as a smooth band of moonlit mist.
     {
         const int readings = jlimit (16, dsp::EngineMonitor::kNumLevels, roundToInt (buffer * dsp::EngineMonitor::kLevelRate));
         const int write = monitor.levelWrite.load (std::memory_order_acquire);
-        const int columns = roundToInt (plotW / 3.0f);
+        const int columns = roundToInt (plotW / 4.0f);
         std::vector<float> amp (static_cast<size_t> (columns + 1), 0.0f);
         for (int c = 0; c <= columns; ++c)
         {
@@ -245,37 +254,57 @@ void GrainDisplay::paint (Graphics& g)
             }
             amp[static_cast<size_t> (c)] = std::min (1.0f, std::sqrt (peak) * 1.1f);
         }
-        Path wave;
+        // Light smoothing so the outline reads as a soft contour, not a bar chart.
+        std::vector<float> smooth (amp.size());
+        for (size_t c = 0; c < amp.size(); ++c)
+        {
+            const float a0 = amp[c > 0 ? c - 1 : c], a2 = amp[c + 1 < amp.size() ? c + 1 : c];
+            smooth[c] = 0.25f * a0 + 0.5f * amp[c] + 0.25f * a2;
+        }
         const float half = (bottom - top) * 0.5f;
-        wave.startNewSubPath (left, mid);
-        for (int c = 0; c <= columns; ++c)
-            wave.lineTo (left + plotW * static_cast<float> (c) / static_cast<float> (columns), mid - 2.0f - amp[static_cast<size_t> (c)] * (half - 2.0f));
-        for (int c = columns; c >= 0; --c)
-            wave.lineTo (left + plotW * static_cast<float> (c) / static_cast<float> (columns), mid + 2.0f + amp[static_cast<size_t> (c)] * (half - 2.0f));
-        wave.closeSubPath();
-        g.setColour (Colour (150, 160, 230).withAlpha (frozen ? 0.32f : 0.22f));
-        g.fillPath (wave);
+        const auto xAt = [&] (size_t c) { return left + plotW * static_cast<float> (c) / static_cast<float> (columns); };
+        Path upper, band;
+        for (size_t c = 0; c < smooth.size(); ++c)
+        {
+            const Point<float> pt (xAt (c), mid - 1.5f - smooth[c] * (half - 2.0f));
+            if (c == 0)
+                upper.startNewSubPath (pt);
+            else
+            {
+                const Point<float> prev (xAt (c - 1), mid - 1.5f - smooth[c - 1] * (half - 2.0f));
+                upper.quadraticTo (prev, (prev + pt) * 0.5f);
+            }
+        }
+        band = upper;
+        for (size_t c = smooth.size(); c-- > 0;)
+            band.lineTo (xAt (c), mid + 1.5f + smooth[c] * (half - 2.0f));
+        band.closeSubPath();
+
+        const float body = frozen ? 0.3f : 0.2f;
+        ColourGradient fill (mist.withAlpha (0.0f), left, 0.0f, mist.withAlpha (body), right, 0.0f, false);
+        fill.addColour (0.22, mist.withAlpha (body));
+        fill.addColour (0.96, mist.withAlpha (body));
+        g.setGradientFill (fill);
+        g.fillPath (band);
+
+        // A faint silver rim along the top edge only.
+        ColourGradient rim (mist.withAlpha (0.0f), left, 0.0f, mist.withAlpha (0.32f), right, 0.0f, false);
+        rim.addColour (0.22, mist.withAlpha (0.32f));
+        g.setGradientFill (rim);
+        g.strokePath (upper, PathStrokeType (0.8f));
     }
 
-    // Write head.
-    g.setColour ((frozen ? Theme::gold : Theme::text).withAlpha (0.7f));
-    g.fillRect (right, top - 6.0f, 1.5f, bottom - top + 12.0f);
+    // Write head: a thin line of light, fading at both ends.
+    {
+        const auto c = frozen ? Theme::gold : Theme::text;
+        ColourGradient head (c.withAlpha (0.0f), 0.0f, top - 4.0f, c.withAlpha (0.0f), 0.0f, bottom + 4.0f, false);
+        head.addColour (0.5, c.withAlpha (0.75f));
+        g.setGradientFill (head);
+        g.fillRect (right, top - 4.0f, 1.2f, bottom - top + 8.0f);
+    }
 
     const double bpm = monitor.bpm.load();
     const float delay = delaySeconds (density, buffer, sync, bpm, rateIndex);
-
-    // TIME marker, or in delay mode the delay time.
-    const float tx = right - (delayMode ? jmin (1.0f, delay / buffer) : time) * plotW;
-    {
-        Path line;
-        line.startNewSubPath (tx, top - 6.0f);
-        line.lineTo (tx, bottom + 4.0f);
-        Path dashed;
-        const float dashes[] = { 3.0f, 3.0f };
-        PathStrokeType (1.5f).createDashedStroke (dashed, line, dashes, 2);
-        g.setColour (Theme::gold.withAlpha (0.95f));
-        g.fillPath (dashed);
-    }
 
     if (delayMode)
     {
@@ -289,8 +318,10 @@ void GrainDisplay::paint (Graphics& g)
             if (x < left)
                 break;
             const float h = (bottom - top) * 0.42f * a;
-            g.setColour (Theme::dotGlow.withAlpha (0.15f + 0.75f * a));
-            g.fillRoundedRectangle (x - 1.5f, mid - h, 3.0f, 2.0f * h, 1.5f);
+            ColourGradient tap (Theme::dotGlow.withAlpha (0.0f), x, mid - h, Theme::dotGlow.withAlpha (0.0f), x, mid + h, false);
+            tap.addColour (0.5, Theme::dotGlow.withAlpha ((0.15f + 0.75f * a) * edgeFade (x)));
+            g.setGradientFill (tap);
+            g.fillRoundedRectangle (x - 1.2f, mid - h, 2.4f, 2.0f * h, 1.2f);
             a *= std::max (fb, 0.08f);
             if (a < 0.03f)
                 break;
@@ -298,36 +329,58 @@ void GrainDisplay::paint (Graphics& g)
     }
     else
     {
-        // Grains: each its envelope shape, laid over the part of the buffer it plays.
+        // Grains: each its envelope shape, laid over the part of the buffer it plays,
+        // drawn as a soft glow that fades towards its base, with a fine bright edge.
         // Fainter when there are many, so a dense cloud still reads as grains.
         const float crowd = jmin (1.0f, std::sqrt (14.0f / static_cast<float> (jmax<size_t> (1, grains.size()))));
         for (const auto& gr : grains)
         {
-            const float fade = (1.0f - gr.age / gr.life) * crowd;
-            const float width = jlimit (14.0f, plotW * 0.6f, gr.seconds / buffer * plotW);
+            const float width = jlimit (12.0f, plotW * 0.6f, gr.seconds / buffer * plotW);
             const float x0 = right - gr.position * plotW;
             const float xa = gr.reverse ? x0 - width : x0;
-            const float h = 30.0f * gr.amp;
-            const float base = top + 6.0f + h + gr.lane * jmax (0.0f, bottom - top - 12.0f - h);
-            Path p;
-            p.startNewSubPath (xa, base);
+            const float fade = (1.0f - gr.age / gr.life) * crowd * edgeFade (xa + 0.5f * width);
+            if (fade <= 0.01f)
+                continue;
+            const float h = 26.0f * gr.amp;
+            const float base = top + 4.0f + h + gr.lane * jmax (0.0f, bottom - top - 8.0f - h);
+            Path edge;
+            edge.startNewSubPath (xa, base);
             for (int i = 0; i <= 24; ++i)
             {
                 const float q = static_cast<float> (i) / 24.0f;
                 // A reverse grain reads the buffer right to left, so its envelope
                 // starts at its right-hand end.
-                p.lineTo (xa + q * width, base - envelope (gr.reverse ? 1.0f - q : q, gr.shape) * h);
+                edge.lineTo (xa + q * width, base - envelope (gr.reverse ? 1.0f - q : q, gr.shape) * h);
             }
-            p.lineTo (xa + width, base);
-            p.closeSubPath();
+            Path body (edge);
+            body.lineTo (xa + width, base);
+            body.closeSubPath();
             // Reverse grains are drawn in cool moonlight blue, forward grains in gold.
-            const auto colour = gr.reverse ? Colour (160, 186, 255) : Theme::dotGlow;
-            // 10% more opaque than the first design.
-            g.setColour (colour.withAlpha (1.1f * (0.08f + 0.2f * fade)));
-            g.fillPath (p);
-            g.setColour (colour.withAlpha (jmin (1.0f, 1.1f * (0.3f + 0.55f * fade))));
-            g.strokePath (p, PathStrokeType (1.1f));
+            const auto colour = gr.reverse ? Colour (168, 192, 255) : Theme::dotGlow;
+            ColourGradient glow (colour.withAlpha (1.1f * 0.3f * fade), 0.0f, base - h, colour.withAlpha (0.0f), 0.0f, base, false);
+            g.setGradientFill (glow);
+            g.fillPath (body);
+            g.setColour (colour.withAlpha (jmin (1.0f, 1.1f * (0.25f + 0.6f * fade))));
+            g.strokePath (edge, PathStrokeType (0.9f));
         }
+    }
+
+    // TIME marker (or the delay time), drawn last so it sits on top: a faint gold
+    // dashed line with a soft glow, present but quieter than the grains.
+    const float tx = right - (delayMode ? jmin (1.0f, delay / buffer) : time) * plotW;
+    {
+        ColourGradient halo (Theme::gold.withAlpha (0.0f), tx - 5.0f, 0.0f, Theme::gold.withAlpha (0.0f), tx + 5.0f, 0.0f, false);
+        halo.addColour (0.5, Theme::gold.withAlpha (0.07f));
+        g.setGradientFill (halo);
+        g.fillRect (tx - 5.0f, top - 4.0f, 10.0f, bottom - top + 8.0f);
+        Path line;
+        line.startNewSubPath (tx, top - 4.0f);
+        line.lineTo (tx, bottom + 4.0f);
+        Path dashed;
+        const float dashes[] = { 3.0f, 4.0f };
+        PathStrokeType (1.1f).createDashedStroke (dashed, line, dashes, 2);
+        g.setColour (Theme::gold.withAlpha (0.45f));
+        g.fillPath (dashed);
     }
 }
 
