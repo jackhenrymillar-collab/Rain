@@ -385,9 +385,19 @@ void SkyBackground::resized()
     renderStatic();
 }
 
+void SkyBackground::setWeather (float rain, float night) noexcept
+{
+    rainTarget = jlimit (0.0f, 1.0f, rain);
+    nightTarget = jlimit (0.0f, 1.0f, night);
+}
+
 void SkyBackground::advance (float seconds)
 {
     time += seconds;
+    // Ease towards the knobs over about half a second, so the weather drifts.
+    const float k = 1.0f - std::exp (-seconds / 0.5f);
+    rainAmount += k * (rainTarget - rainAmount);
+    nightAmount += k * (nightTarget - nightAmount);
     repaint();
 }
 
@@ -412,6 +422,34 @@ void SkyBackground::renderStatic()
     const float scale = 2.0f; // render at 2x so it stays sharp when the window grows
     const int w = Theme::designWidth, h = Theme::designHeight;
     sky = Image (Image::RGB, static_cast<int> (w * scale), static_cast<int> (h * scale), true);
+    nightSky = Image (Image::ARGB, static_cast<int> (w * scale), static_cast<int> (h * scale), true);
+    decor = Image (Image::ARGB, static_cast<int> (w * scale), static_cast<int> (h * scale), true);
+
+    // The deep-night layer: darker sky, nebulae and a denser star field.
+    {
+        Graphics n (nightSky);
+        n.addTransform (AffineTransform::scale (scale));
+        ColourGradient dark (Colour (2, 3, 16).withAlpha (0.62f), 0, 0, Colour (4, 6, 26).withAlpha (0.35f), 0, static_cast<float> (h), false);
+        n.setGradientFill (dark);
+        n.fillRect (0, 0, w, h);
+        // Nebulae: soft violet, rose and teal clouds across the upper sky.
+        softEllipse (n, { 120.0f, 60.0f, 520.0f, 200.0f }, Colour (120, 70, 190).withAlpha (0.22f));
+        softEllipse (n, { 330.0f, 120.0f, 380.0f, 150.0f }, Colour (190, 90, 160).withAlpha (0.14f));
+        softEllipse (n, { 640.0f, 20.0f, 460.0f, 180.0f }, Colour (60, 140, 190).withAlpha (0.16f));
+        softEllipse (n, { 760.0f, 250.0f, 420.0f, 170.0f }, Colour (110, 80, 200).withAlpha (0.14f));
+        softEllipse (n, { -60.0f, 280.0f, 420.0f, 160.0f }, Colour (70, 120, 200).withAlpha (0.12f));
+        Random nr (29);
+        for (int i = 0; i < 220; ++i)
+        {
+            const float x = nr.nextFloat() * static_cast<float> (w);
+            const float y = nr.nextFloat() * static_cast<float> (h) * 0.85f;
+            const float r = nr.nextFloat() > 0.92f ? 1.9f : (nr.nextFloat() > 0.5f ? 1.2f : 0.8f);
+            n.setColour (Colour (230, 236, 255).withAlpha (0.25f + nr.nextFloat() * 0.65f));
+            n.fillEllipse (x, y, r, r);
+        }
+    }
+
+    {
     Graphics g (sky);
     g.addTransform (AffineTransform::scale (scale));
 
@@ -431,6 +469,18 @@ void SkyBackground::renderStatic()
         g.fillEllipse (sx, sy, sz, sz);
     }
 
+    // Low mist along the bottom.
+    const auto bottom = static_cast<float> (h);
+    softEllipse (g, { -120.0f, bottom - 120.0f, 640.0f, 220.0f }, Colour (160, 168, 225).withAlpha (0.2f));
+    softEllipse (g, { 340.0f, bottom - 110.0f, 700.0f, 230.0f }, Colour (150, 158, 220).withAlpha (0.16f));
+    softEllipse (g, { 760.0f, bottom - 120.0f, 520.0f, 210.0f }, Colour (170, 176, 230).withAlpha (0.18f));
+
+    }
+
+    // Everything from here on sits above the night layer.
+    Graphics g (decor);
+    g.addTransform (AffineTransform::scale (scale));
+
     // Moon with a halo, two faint craters, tucked into the top-right corner.
     const Rectangle<float> moon (1004.0f, 22.0f, 100.0f, 100.0f);
     softEllipse (g, moon.expanded (50.0f), Colour (246, 236, 198).withAlpha (0.2f));
@@ -447,12 +497,6 @@ void SkyBackground::renderStatic()
     // The rain cloud drifting across the moon.
     softEllipse (g, { 950.0f, 78.0f, 210.0f, 64.0f }, Colour (100, 108, 165).withAlpha (0.8f));
     softEllipse (g, { 1010.0f, 92.0f, 170.0f, 54.0f }, Colour (80, 88, 150).withAlpha (0.9f));
-
-    // Low mist along the bottom.
-    const auto bottom = static_cast<float> (h);
-    softEllipse (g, { -120.0f, bottom - 120.0f, 640.0f, 220.0f }, Colour (160, 168, 225).withAlpha (0.2f));
-    softEllipse (g, { 340.0f, bottom - 110.0f, 700.0f, 230.0f }, Colour (150, 158, 220).withAlpha (0.16f));
-    softEllipse (g, { 760.0f, bottom - 120.0f, 520.0f, 210.0f }, Colour (170, 176, 230).withAlpha (0.18f));
 
     // Glass panels behind the motion and tempo rows.
     for (const auto& panel : { Rectangle<float> (40.0f, 604.0f, 300.0f, 130.0f), Rectangle<float> (358.0f, 604.0f, 506.0f, 130.0f),
@@ -486,14 +530,25 @@ void SkyBackground::renderStatic()
 
 void SkyBackground::paint (Graphics& g)
 {
-    g.drawImage (sky, getLocalBounds().toFloat());
+    const auto bounds = getLocalBounds().toFloat();
+    g.drawImage (sky, bounds);
+    if (nightAmount > 0.005f)
+    {
+        g.setOpacity (nightAmount);
+        g.drawImage (nightSky, bounds);
+        g.setOpacity (1.0f);
+    }
+    g.drawImage (decor, bounds);
 
-    // Falling rain, slanted like the mockup.
+    // Falling rain, slanted like the mockup: a drizzle with DENSITY at noon, a
+    // downpour at either end.
     const float sx = static_cast<float> (getWidth()) / static_cast<float> (Theme::designWidth);
     const float sy = static_cast<float> (getHeight()) / static_cast<float> (Theme::designHeight);
     const float travel = static_cast<float> (Theme::designHeight) + 140.0f;
-    for (const auto& s : streaks)
+    const auto count = static_cast<size_t> (20.0f + rainAmount * static_cast<float> (streaks.size() - 20));
+    for (size_t i = 0; i < count; ++i)
     {
+        const auto& s = streaks[i];
         const float p = std::fmod (s.phase + time * s.speed, 1.0f);
         const float y = -80.0f + p * travel;
         const float x = s.x * static_cast<float> (Theme::designWidth) - p * 150.0f;

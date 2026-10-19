@@ -100,14 +100,22 @@ public:
 
     void advance (float seconds);
 
+    // The sky follows the sound: rain (0 to 1) sets how heavily it rains, and
+    // night (0 to 1) darkens the sky and brings out nebulae and more stars.
+    void setWeather (float rain, float night) noexcept;
+
 private:
     void renderStatic();
 
     struct Streak { float x, phase, length, alpha, speed; };
 
-    juce::Image sky;
-    std::array<Streak, 70> streaks {};
+    // sky: gradient, stars and mist. night: darkening, nebulae and extra stars,
+    // faded in by `night`. decor: moon, panels, wordmark and headings, always on top.
+    juce::Image sky, nightSky, decor;
+    std::array<Streak, 260> streaks {};
     float time = 0.0f;
+    float rainTarget = 0.5f, rainAmount = 0.5f;
+    float nightTarget = 0.0f, nightAmount = 0.0f;
 };
 
 } // namespace rain::ui

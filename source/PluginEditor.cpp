@@ -103,7 +103,7 @@ RainEditor::RainEditor (RainProcessor& p)
     // Knobs.
     const std::pair<const char*, const char*> large[] = {
         { ParamID::time, "TIME" }, { ParamID::size, "SIZE" }, { ParamID::shape, "SHAPE" }, { ParamID::pitch, "PITCH" },
-        { ParamID::density, "DENSITY" }, { ParamID::feedback, "FEEDBACK" }, { ParamID::reverb, "REVERB" }, { ParamID::dryWet, "DRY / WET" },
+        { ParamID::density, "DENSITY" }, { ParamID::feedback, "FEEDBACK" }, { ParamID::reverb, "CLOUD" }, { ParamID::dryWet, "DRY / WET" },
     };
     for (const auto& [id, name] : large)
     {
@@ -343,6 +343,13 @@ void RainEditor::updateLiveValues()
 void RainEditor::tick()
 {
     constexpr float dt = 1.0f / 30.0f;
+    // The sky follows DENSITY (how hard it rains) and REVERB (how deep the night).
+    {
+        const auto& mon = processor.getMonitor();
+        const float d = mon.effective[static_cast<size_t> (dsp::ModTarget::density)].load();
+        const float r = mon.effective[static_cast<size_t> (dsp::ModTarget::reverb)].load();
+        sky.setWeather (jlimit (0.0f, 1.0f, std::abs (d - 0.5f) * 2.0f), r);
+    }
     sky.advance (dt);
     grainDisplay.advance (dt);
     presetBar.refresh();

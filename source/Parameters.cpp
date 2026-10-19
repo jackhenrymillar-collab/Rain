@@ -31,7 +31,7 @@ juce::StringArray scaleNames()
 
 juce::StringArray modTargetNames()
 {
-    return { "Off", "Time", "Size", "Shape", "Pitch", "Density", "Feedback", "Dry/Wet", "Reverb" };
+    return { "Off", "Time", "Size", "Shape", "Pitch", "Density", "Feedback", "Dry/Wet", "Cloud" };
 }
 
 namespace
@@ -42,7 +42,7 @@ namespace
     {
         return juce::AudioParameterFloatAttributes()
             .withLabel (label)
-            .withStringFromValueFunction ([decimals] (float v, int) { return juce::String (v, decimals); });
+            .withStringFromValueFunction ([decimals] (float v, int) { return decimals > 0 ? juce::String (v, decimals) : juce::String (juce::roundToInt (v)); });
     }
 
     // DENSITY reads like the Beads knob: noon is off, left is regular, right is random.
@@ -54,7 +54,7 @@ namespace
                 if (std::abs (d) < 2.0f)
                     return juce::String ("Off");
                 return (d < 0.0f ? juce::String ("Regular ") : juce::String ("Random "))
-                     + juce::String (std::abs (d) * 2.0f, 0) + "%";
+                     + juce::String (juce::roundToInt (std::abs (d) * 2.0f)) + "%";
             });
     }
 }
@@ -98,7 +98,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::density, v }, "Density", Range { 0.0f, 100.0f, 0.1f }, 82.0f, densityText()));
     percent (ParamID::feedback, "Feedback", 0.0f);
     percent (ParamID::dryWet, "Dry/Wet", 50.0f);
-    percent (ParamID::reverb, "Reverb", 30.0f);
+    percent (ParamID::reverb, "Cloud", 30.0f); // Beads' reverb, named Cloud on Rain's panel
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::freeze, v }, "Freeze", false));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::seed, v }, "Seed", false));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::seedLock, v }, "Seed Lock", true));
@@ -129,7 +129,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     auto rateText = AudioParameterFloatAttributes()
         .withStringFromValueFunction ([] (float hz, int) {
             if (hz < 1.0f)
-                return String (1.0f / hz, hz < 0.1f ? 0 : 1) + " s";
+                // (String's 0 decimal places means "all of them", so round explicitly.)
+                return (hz < 0.1f ? String (roundToInt (1.0f / hz)) : String (1.0f / hz, 1)) + " s";
             return String (hz, 2) + " Hz";
         })
         .withValueFromStringFunction ([] (const String& t) {

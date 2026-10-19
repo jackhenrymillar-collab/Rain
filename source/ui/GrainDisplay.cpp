@@ -214,12 +214,8 @@ void GrainDisplay::paint (Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
     const float W = bounds.getWidth(), H = bounds.getHeight();
-    g.setColour (Colour (18, 24, 66).withAlpha (0.55f));
-    g.fillRoundedRectangle (bounds.reduced (0.5f), 12.0f);
-    g.setColour (Theme::hairline);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 12.0f, 1.0f);
-
-    const float left = 14.0f, right = W - 15.0f, top = 34.0f, bottom = H - 44.0f, laneY = H - 16.0f;
+    // No frame or labels: the buffer and grains float on the sky.
+    const float left = 14.0f, right = W - 15.0f, top = 12.0f, bottom = H - 12.0f;
     const float plotW = right - left, mid = (top + bottom) * 0.5f;
     const float buffer = monitor.bufferSeconds.load();
     const bool frozen = param (ParamID::freeze) > 0.5f;
@@ -228,7 +224,6 @@ void GrainDisplay::paint (Graphics& g)
     const int rateIndex = jlimit (0, 5, static_cast<int> (param (ParamID::syncRate)));
     auto& e = monitor.effective;
     const float time = e[static_cast<size_t> (dsp::ModTarget::time)].load();
-    const float shape = e[static_cast<size_t> (dsp::ModTarget::shape)].load();
     const float density = e[static_cast<size_t> (dsp::ModTarget::density)].load();
 
     // Buffer waveform: newest on the right.
@@ -266,18 +261,6 @@ void GrainDisplay::paint (Graphics& g)
     g.setColour ((frozen ? Theme::gold : Theme::text).withAlpha (0.7f));
     g.fillRect (right, top - 6.0f, 1.5f, bottom - top + 12.0f);
 
-    // Labels.
-    g.setFont (Fonts::caps (13.0f, 0.2f));
-    g.setColour (Theme::textMuted);
-    const String bufferText = "BUFFER  " + String (roundToInt (buffer)) + " s";
-    g.drawText (bufferText, Rectangle<float> (left, 8.0f, 200.0f, 16.0f), Justification::centredLeft, false);
-    g.drawText ("NOW", Rectangle<float> (right - 100.0f, 8.0f, 101.0f, 16.0f), Justification::centredRight, false);
-    if (frozen)
-    {
-        g.setColour (Theme::gold);
-        g.drawText ("FROZEN", Rectangle<float> (left + 120.0f, 8.0f, 120.0f, 16.0f), Justification::centredLeft, false);
-    }
-
     const double bpm = monitor.bpm.load();
     const float delay = delaySeconds (density, buffer, sync, bpm, rateIndex);
 
@@ -292,10 +275,6 @@ void GrainDisplay::paint (Graphics& g)
         PathStrokeType (1.5f).createDashedStroke (dashed, line, dashes, 2);
         g.setColour (Theme::gold.withAlpha (0.95f));
         g.fillPath (dashed);
-        g.setFont (Fonts::caps (12.0f, 0.2f));
-        // Keep the label clear of BUFFER and NOW.
-        const float labelX = jlimit (left + 150.0f, right - 80.0f, tx);
-        g.drawText (delayMode ? "DELAY" : "TIME", Rectangle<float> (labelX - 40.0f, top - 22.0f, 80.0f, 14.0f), Justification::centred, false);
     }
 
     if (delayMode)
@@ -343,42 +322,13 @@ void GrainDisplay::paint (Graphics& g)
             p.closeSubPath();
             // Reverse grains are drawn in cool moonlight blue, forward grains in gold.
             const auto colour = gr.reverse ? Colour (160, 186, 255) : Theme::dotGlow;
-            g.setColour (colour.withAlpha (0.08f + 0.2f * fade));
+            // 10% more opaque than the first design.
+            g.setColour (colour.withAlpha (1.1f * (0.08f + 0.2f * fade)));
             g.fillPath (p);
-            g.setColour (colour.withAlpha (0.3f + 0.55f * fade));
+            g.setColour (colour.withAlpha (jmin (1.0f, 1.1f * (0.3f + 0.55f * fade))));
             g.strokePath (p, PathStrokeType (1.1f));
         }
     }
-
-    // Density lane.
-    g.setColour (Colour (190, 196, 255).withAlpha (0.18f));
-    g.fillRect (left, laneY - 0.5f, plotW, 1.0f);
-    for (const float age : triggers)
-    {
-        const float x = right - age / kLaneSeconds * plotW;
-        g.setColour (Theme::dotGlow.withAlpha (jmax (0.0f, 0.9f - age / 3.0f)));
-        g.fillEllipse (x - 2.2f, laneY - 2.2f, 4.4f, 4.4f);
-    }
-
-    String readout;
-    if (delayMode)
-    {
-        readout = "Echo every " + delayText (density, buffer, sync, bpm, rateIndex);
-    }
-    else if (! (param (ParamID::seedLock) > 0.5f || param (ParamID::seed) > 0.5f))
-        readout = "Hold SEED to play grains";
-    else if (sync)
-        readout = syncDensityText (density, rateIndex) + "  ·  " + shapeName (shape);
-    else
-        readout = state.getParameter (ParamID::density)->getText (state.getParameter (ParamID::density)->convertTo0to1 (density * 100.0f), 32)
-                + "  ·  " + shapeName (shape);
-
-    g.setFont (Fonts::caps (13.0f, 0.2f));
-    g.setColour (Theme::textMuted);
-    g.drawText (delayMode ? "ECHOES" : sync ? "CLOCK" : "DENSITY", Rectangle<float> (left, laneY - 22.0f, 160.0f, 14.0f), Justification::centredLeft, false);
-    g.setFont (Fonts::sans (16.0f));
-    g.setColour (Theme::text);
-    g.drawText (readout, Rectangle<float> (left + 120.0f, laneY - 24.0f, plotW - 120.0f, 16.0f), Justification::centredRight, false);
 }
 
 } // namespace rain::ui
