@@ -64,7 +64,7 @@ reported to the host.
 | **Feedback** | 0 to 100% | How much of the grain output is recorded back into the buffer. Soft-limited, so it can run hot. On the panel, it brings forked lightning (rare at first, about one strike every 3 to 4 s at full) that leaves an afterglow, and makes the stars brighter. |
 | **Dry/Wet** | 0 to 100% | Beads' crossfade law (dry 0.75×, wet 1.5× at the extremes). **Rain:** the dry signal is mixed outside Beads at the host rate, so it is never resampled, quantised or band-limited, in any quality. Beads reports the gain it would have given the dry signal (including its limiters), and still feeds the dry signal to Cloud. |
 | **Cloud** | 0 to 100% | Beads' reverb (Rain calls it Cloud): amount and decay together. It sits after the dry/wet mix, so it also works on the dry signal. On the panel, it takes the sky much darker, with vast nebulae, many more stars and aurora low down; the mist clears, the rain fades a little and the moon wanes to a crescent whose dark side shows its craters. |
-| **Soften** | 0 to 100% | **Rain** (Grain Character): darkens and warms the grains only: light saturation, then a 12 dB/octave low-pass from 16 kHz down to about 2.5 kHz. Default 25%. |
+| **Soften** | 0 to 100% | **Rain** (Grain Character): darkens and warms the grains only: light saturation, then a 12 dB/octave low-pass from 16 kHz down to about 2.5 kHz and a 12 dB/octave high-pass from 20 Hz up to about 180 Hz. Default 25% (low cut about 35 Hz). |
 
 ## Buttons
 

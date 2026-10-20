@@ -21,7 +21,8 @@ The files are unchanged from upstream, except that:
   sets the length. They also add `Parameters::random_pan` (default 0, no effect),
   which pulls each grain's pan towards a random position.
 - `beads/dsp/processor.h/.cc` add `MixParameters::soften` (default 0, no effect): a
-  light saturation and 12 dB/octave low-pass on the grains before the dry/wet mix.
+  light saturation, 12 dB/octave low-pass and gentle 12 dB/octave high-pass on the grains
+  before the dry/wet mix.
 - Sound quality additions, all off by default (upstream behaviour):
   - `processor.h/.cc`: `MixParameters::direct_gain` leaves the dry signal out of the
     output (it still feeds the reverb) and reports its gain per sample, so Rain can mix

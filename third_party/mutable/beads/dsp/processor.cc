@@ -115,15 +115,17 @@ void Processor::Configure(Media media, bool mono) {
   if (has_studio_) {
     reverb_studio_.Reset(sr);
   }
-  std::fill(&soften_state_[0][0], &soften_state_[0][0] + 4, 0.0f);
+  std::fill(&soften_state_[0][0], &soften_state_[0][0] + 8, 0.0f);
 }
 
 // Rain: SOFTEN. A little saturation rounds the grains' peaks, then a gentle
 // 12 dB/octave low-pass (16 kHz down to about 2.5 kHz) takes the edge off bright
-// and pitched-up grains. Applied to the grains before the dry/wet mix.
+// and pitched-up grains, and a gentle 12 dB/octave high-pass (20 Hz up to about
+// 180 Hz) thins out boomy, pitched-down ones. Applied to the grains before the
+// dry/wet mix.
 void Processor::Soften(float amount, FloatFrame* out, size_t size) {
   if (amount <= 0.0f) {
-    std::fill(&soften_state_[0][0], &soften_state_[0][0] + 4, 0.0f);
+    std::fill(&soften_state_[0][0], &soften_state_[0][0] + 8, 0.0f);
     return;
   }
   const float sr = sample_rate();
@@ -131,6 +133,9 @@ void Processor::Soften(float amount, FloatFrame* out, size_t size) {
       16000.0f * stmlib::SemitonesToRatio(-32.0f * amount), 0.42f * sr);
   const float g = tanf(3.14159265f * cutoff / sr);
   const float k = g / (1.0f + g);
+  const float low_cut = 20.0f * stmlib::SemitonesToRatio(38.0f * amount);
+  const float g_hp = tanf(3.14159265f * low_cut / sr);
+  const float k_hp = g_hp / (1.0f + g_hp);
   const float drive = 1.0f + 1.2f * amount;
   const float makeup = 1.0f / drive;
   for (size_t i = 0; i < size; ++i) {
@@ -142,6 +147,13 @@ void Processor::Soften(float amount, FloatFrame* out, size_t size) {
         const float v = (x - z) * k;
         x = v + z;
         z = x + v;
+      }
+      for (int stage = 2; stage < 4; ++stage) {
+        float& z = soften_state_[c][stage];
+        const float v = (x - z) * k_hp;
+        const float lp = v + z;
+        z = lp + v;
+        x -= lp;
       }
       *channel[c] = x;
     }

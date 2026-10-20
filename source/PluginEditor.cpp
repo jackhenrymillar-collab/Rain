@@ -128,7 +128,7 @@ RainEditor::RainEditor (RainProcessor& p)
     // Grain character: how each grain sounds and where it sits.
     const std::tuple<const char*, const char*, const char*> character[] = {
         { ParamID::reverse, "REVERSE", "Chance each grain plays backwards" },
-        { ParamID::soften, "SOFTEN", "Darkens and warms the grains, leaving the dry signal alone" },
+        { ParamID::soften, "SOFTEN", "Rounds off the highs and lows of the grains, leaving the dry signal alone" },
         { ParamID::randomPan, "RANDOM PAN", "Places each grain at a random point in the stereo field" },
     };
     for (const auto& [id, name, tip] : character)

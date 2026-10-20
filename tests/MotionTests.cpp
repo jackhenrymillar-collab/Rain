@@ -288,14 +288,16 @@ namespace
     }
 }
 
-TEST_CASE ("SOFTEN rolls off the highs of the grains and keeps the lows")
+TEST_CASE ("SOFTEN rolls off the highs and lows of the grains and keeps the middle")
 {
     const double highRatio = wetLevel (7000.0f, 1.0f) / wetLevel (7000.0f, 0.0f);
-    const double lowRatio = wetLevel (200.0f, 1.0f) / wetLevel (200.0f, 0.0f);
-    INFO ("high " << highRatio << " low " << lowRatio);
+    const double midRatio = wetLevel (700.0f, 1.0f) / wetLevel (700.0f, 0.0f);
+    const double lowRatio = wetLevel (60.0f, 1.0f) / wetLevel (60.0f, 0.0f);
+    INFO ("high " << highRatio << " middle " << midRatio << " low " << lowRatio);
     CHECK (highRatio < 0.25);
-    CHECK (lowRatio > 0.8);
-    CHECK (lowRatio < 1.1);
+    CHECK (lowRatio < 0.4);
+    CHECK (midRatio > 0.75);
+    CHECK (midRatio < 1.1);
 }
 
 TEST_CASE ("Consonance favours the root, fifth and thirds")

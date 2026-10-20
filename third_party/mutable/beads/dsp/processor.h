@@ -236,7 +236,7 @@ class Processor {
 
   // Rain: state of the SOFTEN low-pass (two one-pole stages per channel).
   void Soften(float amount, FloatFrame* out, size_t size);
-  float soften_state_[2][2] = { { 0.0f, 0.0f }, { 0.0f, 0.0f } };
+  float soften_state_[2][4] = { { 0.0f, 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f, 0.0f } };
   
   WowAndFlutter wow_and_flutter_;
   Reverb reverb_;
