@@ -29,6 +29,28 @@ RainProcessor::RainProcessor()
     autoGain    = state.getRawParameterValue (ParamID::autoGain);
     inputGain   = state.getRawParameterValue (ParamID::inputGain);
     outputGain  = state.getRawParameterValue (ParamID::outputGain);
+    mode        = state.getRawParameterValue (ParamID::mode);
+    sync        = state.getRawParameterValue (ParamID::sync);
+    syncRate    = state.getRawParameterValue (ParamID::syncRate);
+    scale       = state.getRawParameterValue (ParamID::scale);
+    overlap     = state.getRawParameterValue (ParamID::overlap);
+    reverse     = state.getRawParameterValue (ParamID::reverse);
+    soften      = state.getRawParameterValue (ParamID::soften);
+    randomPan   = state.getRawParameterValue (ParamID::randomPan);
+    formant     = state.getRawParameterValue (ParamID::formant);
+    bypass      = state.getRawParameterValue (ParamID::bypass);
+    modRate     = { state.getRawParameterValue (ParamID::mod1Rate), state.getRawParameterValue (ParamID::mod2Rate) };
+    modDepth    = { state.getRawParameterValue (ParamID::mod1Depth), state.getRawParameterValue (ParamID::mod2Depth) };
+    modTarget   = { state.getRawParameterValue (ParamID::mod1Target), state.getRawParameterValue (ParamID::mod2Target) };
+}
+
+void RainProcessor::setCurrentProgram (int index)
+{
+    // Some hosts re-send the current program when restoring a session; don't let that
+    // undo edits made on top of it.
+    if (index == presets.currentFactoryIndex() && presets.isModified())
+        return;
+    presets.loadFactory (index);
 }
 
 bool RainProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -59,7 +81,7 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.time = time->load() * 0.01f;
     p.size = size->load() * 0.01f;
     p.shape = shape->load() * 0.01f;
-    p.pitchSemis = pitch->load();
+    p.pitchSemis = dsp::detuneSemitones (pitch->load());
     p.timeRandom = timeRandom->load() * 0.01f;
     p.sizeRandom = sizeRandom->load() * 0.01f;
     p.shapeRandom = shapeRandom->load() * 0.01f;
@@ -71,10 +93,26 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.freeze = freeze->load() > 0.5f;
     p.seed = seed->load() > 0.5f;
     p.seedLock = seedLock->load() > 0.5f;
-    p.quality = static_cast<dsp::Quality> (juce::jlimit (0, 3, static_cast<int> (quality->load())));
+    p.quality = static_cast<dsp::Quality> (juce::jlimit (0, 4, static_cast<int> (quality->load())));
     p.autoGain = autoGain->load() > 0.5f;
     p.inputGainDb = inputGain->load();
     p.outputGainDb = outputGain->load();
+    p.mode = mode->load() > 0.5f ? dsp::Mode::delay : dsp::Mode::grains;
+    p.sync = sync->load() > 0.5f;
+    p.syncDivision = juce::jlimit (0, static_cast<int> (dsp::kSyncDivisionBeats.size()) - 1, static_cast<int> (syncRate->load()));
+    p.scale = static_cast<dsp::Scale> (juce::jlimit (0, dsp::kNumScales - 1, static_cast<int> (scale->load())));
+    p.overlap = overlap->load() > 0.5f;
+    p.reverse = reverse->load() * 0.01f;
+    p.soften = soften->load() * 0.01f;
+    p.randomPan = randomPan->load() * 0.01f;
+    p.formant = formant->load() > 0.5f;
+    p.bypass = bypass->load() > 0.5f;
+    for (std::size_t m = 0; m < 2; ++m)
+    {
+        p.mods[m].rateHz = modRate[m]->load();
+        p.mods[m].depth = modDepth[m]->load() * 0.01f;
+        p.mods[m].target = static_cast<dsp::ModTarget> (juce::jlimit (0, dsp::kNumModTargets - 1, static_cast<int> (modTarget[m]->load())));
+    }
     return p;
 }
 
@@ -91,6 +129,22 @@ void RainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
         buffer.copyFrom (1, 0, buffer, 0, 0, numSamples);
 
     engine.setParams (readParams());
+
+    double bpm = 120.0, ppq = 0.0;
+    bool playing = false;
+    if (auto* head = getPlayHead())
+        if (const auto pos = head->getPosition())
+        {
+            if (const auto b = pos->getBpm())
+                bpm = *b;
+            if (const auto q = pos->getPpqPosition())
+            {
+                ppq = *q;
+                playing = pos->getIsPlaying();
+            }
+        }
+    engine.setTransport (bpm, ppq, playing);
+
     engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), numSamples);
 
     // Changing quality changes Beads' internal rate, and with it the latency.
@@ -113,7 +167,9 @@ juce::AudioProcessorEditor* RainProcessor::createEditor()
 
 void RainProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = state.copyState().createXml())
+    auto copy = state.copyState();
+    presets.writeToState (copy);
+    if (auto xml = copy.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
@@ -121,7 +177,26 @@ void RainProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (state.state.getType()))
-            state.replaceState (juce::ValueTree::fromXml (*xml));
+        {
+            const auto restored = juce::ValueTree::fromXml (*xml);
+            state.replaceState (restored);
+
+            // replaceState skips parameters whose stored value already reads the same
+            // (a toggle at 0.62 and one at 1.0 are both "on"); set those exactly too.
+            for (auto* param : getParameters())
+                if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param))
+                {
+                    const auto child = restored.getChildWithProperty ("id", ranged->paramID);
+                    if (child.isValid() && child.hasProperty ("value"))
+                    {
+                        const float target = ranged->convertTo0to1 (static_cast<float> (child.getProperty ("value")));
+                        if (std::abs (ranged->getValue() - target) > 1.0e-6f)
+                            ranged->setValueNotifyingHost (target);
+                    }
+                }
+
+            presets.readFromState (restored);
+        }
 }
 
 } // namespace rain

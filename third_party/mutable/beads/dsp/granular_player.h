@@ -30,6 +30,7 @@
 #define BEADS_DSP_GRANULAR_PLAYER_H_
 
 #include "stmlib/stmlib.h"
+#include "stmlib/utils/random.h"
 
 #include "beads/dsp/grain.h"
 #include "beads/dsp/randomized_parameter.h"
@@ -50,6 +51,25 @@ struct Parameters {
   RandomizedParameter shape;
   RandomizedParameter pitch;
   bool monophonic_mode;
+  // Rain: chance (0 to 1) that each grain plays backwards. Negative keeps the
+  // module's behaviour, where SIZE left of 9 o'clock reverses every grain.
+  float reverse_probability = -1.0f;
+  // Rain: 0 to 1, pulls each grain's pan towards a random position in the
+  // stereo field. At 0 Beads spreads grains as upstream.
+  float random_pan = 0.0f;
+  // Rain: grain quality options. All off by default, which is upstream Beads.
+  // clean_reader: read grains with a band-limited (windowed sinc) interpolator
+  //   instead of 4-point Hermite, so pitched grains don't alias.
+  // formant: pitch grains by repeating pitch-period slices of the source at the
+  //   new rate (PSOLA) instead of resampling, so the tone colour stays put.
+  // phase_align: nudge each new grain's start by up to 5 ms so its waveform lines
+  //   up with the grain playing before it, avoiding hollow, phasey overlaps.
+  // pitch_glide: seconds over which a new grain glides from the previous grain's
+  //   pitch to its own (0 = off).
+  bool clean_reader = false;
+  bool formant = false;
+  bool phase_align = false;
+  float pitch_glide = 0.0f;
 };
 
 template<typename T, int num_grains>
@@ -124,6 +144,9 @@ class GranularPlayer {
     const float total_spread = ComputeSpread(trigger, p);
     const float pan_spread = 0.5f * num_active_grains * total_spread;
     *pan = BoundedRandomFloat(pan_spread);
+    if (p.random_pan > 0.0f) {
+      *pan += (stmlib::Random::GetFloat() - *pan) * p.random_pan;
+    }
   }
   
   inline T* new_grain() { return grain_priority_list_[0]; }

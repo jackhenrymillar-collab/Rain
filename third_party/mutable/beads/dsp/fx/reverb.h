@@ -36,12 +36,17 @@
 
 namespace beads {
 
-class Reverb {
+// Rain: templated on the storage format (upstream is FORMAT_16_BIT, kept as
+// `Reverb` below), so Rain's Studio quality can run the same reverb in 32-bit float.
+template<Format format>
+class ReverbT {
  public:
-  Reverb() { }
-  ~Reverb() { }
+  ReverbT() { }
+  ~ReverbT() { }
   
-  void Init(uint16_t* buffer, float sample_rate) {
+  typedef FxEngine<32768, format> E;
+
+  void Init(typename E::T* buffer, float sample_rate) {
     engine_.Init(buffer);
     Reset(sample_rate);
   }
@@ -58,32 +63,37 @@ class Reverb {
     send_ = 0.0f;
   }
   
-  void Process(FloatFrame* in_out, size_t size) {
+  // Rain: when `direct` is given, the reverb is still fed from in_out, but the
+  // direct (unreverberated) part of the output is taken from `direct` instead, and
+  // its gain for each sample is written to `direct_gain`. Rain uses this to mix the
+  // dry signal outside Beads while keeping it in the reverb's send.
+  void Process(FloatFrame* in_out, size_t size,
+               const FloatFrame* direct = NULL, float* direct_gain = NULL) {
     // This is the Griesinger topology described in the Dattorro paper
     // (4 AP diffusers on the input, then a loop of 2x 2AP+1Delay).
     // Modulation is applied in the loop of the first diffuser AP for additional
     // smearing; and to the two long delays for a slow shimmer/chorus effect.
-    typedef E::Reserve<150,
-      E::Reserve<214,
-      E::Reserve<319,
-      E::Reserve<527,
-      E::Reserve<2182,
-      E::Reserve<2690,
-      E::Reserve<4501,
-      E::Reserve<2525,
-      E::Reserve<2197,
-      E::Reserve<6312> > > > > > > > > > Memory;
-    E::DelayLine<Memory, 0> ap1;
-    E::DelayLine<Memory, 1> ap2;
-    E::DelayLine<Memory, 2> ap3;
-    E::DelayLine<Memory, 3> ap4;
-    E::DelayLine<Memory, 4> dap1a;
-    E::DelayLine<Memory, 5> dap1b;
-    E::DelayLine<Memory, 6> del1;
-    E::DelayLine<Memory, 7> dap2a;
-    E::DelayLine<Memory, 8> dap2b;
-    E::DelayLine<Memory, 9> del2;
-    E::Context c;
+    typedef typename E::template Reserve<150,
+      typename E::template Reserve<214,
+      typename E::template Reserve<319,
+      typename E::template Reserve<527,
+      typename E::template Reserve<2182,
+      typename E::template Reserve<2690,
+      typename E::template Reserve<4501,
+      typename E::template Reserve<2525,
+      typename E::template Reserve<2197,
+      typename E::template Reserve<6312> > > > > > > > > > Memory;
+    typename E::template DelayLine<Memory, 0> ap1;
+    typename E::template DelayLine<Memory, 1> ap2;
+    typename E::template DelayLine<Memory, 2> ap3;
+    typename E::template DelayLine<Memory, 3> ap4;
+    typename E::template DelayLine<Memory, 4> dap1a;
+    typename E::template DelayLine<Memory, 5> dap1b;
+    typename E::template DelayLine<Memory, 6> del1;
+    typename E::template DelayLine<Memory, 7> dap2a;
+    typename E::template DelayLine<Memory, 8> dap2b;
+    typename E::template DelayLine<Memory, 9> del2;
+    typename E::Context c;
 
     const float kap = 0.625f;
     const float klp = lp_;
@@ -144,7 +154,12 @@ class Reverb {
       c.Write(del1, 1.0f);
       c.Write(wet);
 
-      in_out->l = in_out->l * dry_amount + wet * wet_amount;
+      const float direct_l = direct ? direct->l : in_out->l;
+      const float direct_r = direct ? direct->r : in_out->r;
+      if (direct_gain) {
+        *direct_gain++ = dry_amount;
+      }
+      in_out->l = direct_l * dry_amount + wet * wet_amount;
 
       c.Load(apout);
       c.Interpolate(del1, 4460.0f, LFO_1, 40.0f, krt);
@@ -156,8 +171,11 @@ class Reverb {
       c.Write(del2, 1.0f);
       c.Write(wet);
       
-      in_out->r = in_out->r * dry_amount + wet * wet_amount;
+      in_out->r = direct_r * dry_amount + wet * wet_amount;
       ++in_out;
+      if (direct) {
+        ++direct;
+      }
     }
   }
   
@@ -178,7 +196,6 @@ class Reverb {
   }
   
  private:
-  typedef FxEngine<32768, FORMAT_16_BIT> E;
   E engine_;
   
   float mix_;
@@ -191,8 +208,10 @@ class Reverb {
   float lp_1_;
   float lp_2_;
   
-  DISALLOW_COPY_AND_ASSIGN(Reverb);
+  DISALLOW_COPY_AND_ASSIGN(ReverbT);
 };
+
+typedef ReverbT<FORMAT_16_BIT> Reverb;
 
 }  // namespace beads
 

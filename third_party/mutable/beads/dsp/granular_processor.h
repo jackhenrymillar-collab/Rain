@@ -41,7 +41,8 @@
 
 namespace beads {
 
-template<Resolution resolution, int max_delay, int ratio>
+// Rain: bank_size added (default as upstream) so Studio quality can use bigger banks.
+template<Resolution resolution, int max_delay, int ratio, size_t bank_size = 262144>
 class GranularProcessor {
  public:
   GranularProcessor() { }
@@ -286,8 +287,8 @@ class GranularProcessor {
     
     const float max_feedback_gain = taps ? 1.5f : 3.0f;
 
-    const float lp_coefficients[RESOLUTION_LAST] = { 0.75f, 0.9f, 0.999f };
-    const float soft_limit_gains[RESOLUTION_LAST] = { 1.75f, 1.3f, 0.0f };
+    const float lp_coefficients[RESOLUTION_LAST] = { 0.75f, 0.9f, 0.999f, 0.999f };
+    const float soft_limit_gains[RESOLUTION_LAST] = { 1.75f, 1.3f, 0.0f, 0.0f };
 
     const float lp_coefficient = lp_coefficients[resolution];
     const float soft_limit_gain = soft_limit_gains[resolution];
@@ -378,8 +379,8 @@ class GranularProcessor {
   DelayGranularPlayer granular_player_;
   MultitapDelay multitap_delay_;
   
-  DelayLine<resolution, max_delay, 2> stereo_delay_line_;
-  DelayLine<resolution, max_delay * 2, 1> mono_delay_line_;
+  DelayLine<resolution, max_delay, 2, bank_size> stereo_delay_line_;
+  DelayLine<resolution, max_delay * 2, 1, bank_size> mono_delay_line_;
   
   stmlib::SampleRateConverter<stmlib::SRC_DOWN, ratio, 48> src_down_[2];
   stmlib::SampleRateConverter<stmlib::SRC_UP, ratio, 48> src_up_[2];

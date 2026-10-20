@@ -34,7 +34,9 @@ add_library(mutable_beads STATIC
     third_party/mutable/stmlib/dsp/units.cc)
 target_include_directories(mutable_beads SYSTEM PUBLIC third_party/mutable)
 # TEST selects stmlib's portable code paths instead of ARM assembly.
-target_compile_definitions(mutable_beads PUBLIC TEST)
+# BEADS_MIN_ATTACK_SECONDS: Rain gives grains a 1.5 ms minimum attack (the module
+# uses 0.5 ms), which stops square and short grains popping on low notes.
+target_compile_definitions(mutable_beads PUBLIC TEST BEADS_MIN_ATTACK_SECONDS=0.0015f)
 target_compile_features(mutable_beads PUBLIC cxx_std_20)
 set_target_properties(mutable_beads PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(NOT MSVC)
@@ -91,7 +93,11 @@ if(RAIN_BUILD_PLUGIN)
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
         source/Parameters.cpp
+        source/Presets.cpp
         source/ui/Components.cpp
+        source/ui/GrainDisplay.cpp
+        source/ui/Sky.cpp
+        source/ui/PresetBar.cpp
         source/ui/Theme.cpp)
 
     # Cormorant Garamond and Jost, SIL Open Font License (see resources/fonts).
@@ -118,6 +124,14 @@ if(RAIN_BUILD_PLUGIN)
             juce::juce_recommended_config_flags
             juce::juce_recommended_lto_flags
             juce::juce_recommended_warning_flags)
+
+    # Headless panel renderer, for screenshots (off by default).
+    option(RAIN_BUILD_SNAPSHOT "Build the panel snapshot tool" OFF)
+    if(RAIN_BUILD_SNAPSHOT)
+        add_executable(rain_snapshot tools/Snapshot.cpp)
+        target_include_directories(rain_snapshot PRIVATE source)
+        target_link_libraries(rain_snapshot PRIVATE Rain rain_dsp juce::juce_gui_extra)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -132,7 +146,9 @@ if(RAIN_BUILD_TESTS)
 
     add_executable(rain_tests
         tests/DspTests.cpp
-        tests/EngineTests.cpp)
+        tests/EngineTests.cpp
+        tests/MotionTests.cpp
+        tests/QualityTests.cpp)
     target_link_libraries(rain_tests PRIVATE rain_dsp Catch2::Catch2WithMain)
 
     enable_testing()

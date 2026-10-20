@@ -4,9 +4,11 @@ A granular texture processor plugin for macOS (VST3 and AU), built with JUCE 8.
 Rain runs the DSP of Mutable Instruments **Beads** (MIT licensed), so it records,
 freezes, scatters and re-pitches audio the way the module does.
 
-**Status: Phase 1.** The full Beads signal path is ported: grains, delay mode,
-feedback, reverb, freeze and all four quality modes, with a night-sky front panel
-in the style of Overcast. See [docs/DESIGN.md](docs/DESIGN.md) for every control.
+The full Beads signal path is ported: grains, delay mode, feedback, reverb, freeze
+and all four quality modes. On top of that Rain adds a Grains/Delay switch, a live
+grain display, two modulators (Wave and Drift), host tempo sync, scale quantising
+and presets, all in a night-sky front panel in the style of Overcast. See
+[docs/DESIGN.md](docs/DESIGN.md) for every control.
 
 ![Rain's front panel](docs/panel.png)
 

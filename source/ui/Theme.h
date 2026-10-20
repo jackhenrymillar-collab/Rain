@@ -10,7 +10,7 @@ namespace rain::ui
 namespace Theme
 {
     inline constexpr int designWidth = 1170;
-    inline constexpr int designHeight = 760;
+    inline constexpr int designHeight = 860;
 
     inline const juce::Colour skyTop     { 0xff0a0f2e };
     inline const juce::Colour skyMid     { 0xff131a48 };
