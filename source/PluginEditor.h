@@ -2,6 +2,8 @@
 
 #include "PluginProcessor.h"
 #include "ui/Components.h"
+#include "ui/GrainDisplay.h"
+#include "ui/PresetBar.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -13,7 +15,7 @@ namespace rain
 {
 
 // Rain's night-sky front panel, styled after Overcast. Laid out in a fixed
-// 1170 x 760 design space and scaled to the window, which keeps its aspect ratio.
+// 1170 x 860 design space and scaled to the window, which keeps its aspect ratio.
 class RainEditor final : public juce::AudioProcessorEditor,
                          private juce::Timer
 {
@@ -23,33 +25,62 @@ public:
 
     void resized() override;
 
+    // One animation step (the 30 Hz timer calls this; the snapshot tool calls it directly).
+    void tick();
+
 private:
-    void timerCallback() override;
+    void timerCallback() override { tick(); }
     void layoutContent();
     void showQuality (int index);
-    void updateStatus();
+    void updateLiveValues();
+
+    static juce::Label& styleCaps (juce::Label&, float height = 16.0f);
 
     RainProcessor& processor;
     juce::AudioProcessorValueTreeState& state;
     ui::RainLookAndFeel lookAndFeel;
+    juce::TooltipWindow tooltips { this, 700 };
 
     juce::Component content;
     ui::SkyBackground sky;
+    std::unique_ptr<ui::MoonSwitch> moon;
 
-    struct PresetBar final : juce::Component
+    // Title.
+    ui::GrainDisplay grainDisplay;
+    ui::PresetBar presetBar;
+    juce::TextButton saveButton { "SAVE" };
+
+    // Knobs.
+    std::vector<std::unique_ptr<ui::OrbKnob>> knobs, smallKnobs, characterKnobs;
+    juce::TextButton autoGainButton { "AUTO" };
+    // Input: aim for peaks between -12 and -1 dBFS (Beads' input gain soft-clips above).
+    // Output: peaks ideally up to -1 dBFS.
+    ui::LevelMeter inputMeter { -12.0f, -1.0f }, outputMeter { -6.0f, -1.0f };
+    juce::TextButton overlapButton { "OVERLAP" };
+    juce::TextButton formantButton { "FORMANT" };
+
+    // Motion: two modulators.
+    struct ModRow
     {
-        void paint (juce::Graphics&) override;
-    } presetBar;
+        juce::Label name;
+        ui::ModScope scope;
+        std::unique_ptr<ui::OrbKnob> rate, depth;
+        std::unique_ptr<ui::ChoiceBox> target;
+    };
+    std::array<ModRow, 2> modRows;
 
-    juce::Label qualityTitle, qualityDescription, status;
-    std::array<juce::TextButton, 4> qualityChips;
+    // Tempo and scale.
+    juce::TextButton syncButton { "SYNC" };
+    std::unique_ptr<ui::ChoiceBox> syncRate, scale;
+    juce::Label scaleLabel, tempoReadout, scaleReadout;
+
+    // Footer.
+    juce::TextButton freezeButton { "FREEZE" }, seedButton { "SEED" }, seedLockButton { "SEED LOCK" };
+    juce::Label qualityLabel, presetLabel;
+    std::array<juce::TextButton, 5> qualityChips;
     std::unique_ptr<juce::ParameterAttachment> qualityAttachment;
 
-    std::vector<std::unique_ptr<ui::OrbKnob>> knobs, smallKnobs;
-
-    juce::TextButton freezeButton { "FREEZE" }, seedButton { "SEED" },
-                     seedLockButton { "SEED LOCK" }, autoGainButton { "AUTO" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> freezeAttachment, seedLockAttachment, autoGainAttachment;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>> buttonAttachments;
     std::unique_ptr<juce::ParameterAttachment> seedAttachment;
     bool seedHeld = false;
 

@@ -50,6 +50,13 @@ namespace beads {
 // (512 + 256) * 1000 bytes, 48kHz 16-bit stereo = 4 seconds
 const size_t kDelayBufferSizeBits = 768 * 1000 * 8;
 
+// Rain: Studio quality, 8 seconds of 48 kHz 32-bit float stereo in three banks of
+// 1 MB (supplied by Rain; the module's own 768 kB is not big enough).
+const int kStudioDelayFrames = 48000 * 8;
+const size_t kStudioBankSize = 1048576;
+const size_t kStudioBufferSize = 3 * kStudioBankSize;
+const size_t kStudioReverbSize = 32768;
+
 class Processor {
  public:
   Processor() { }
@@ -59,7 +66,8 @@ class Processor {
     MEDIA_DIRTY_TAPE,
     MEDIA_CLEAN_TAPE,
     MEDIA_VINTAGE_DIGITAL,
-    MEDIA_DIGITAL
+    MEDIA_DIGITAL,
+    MEDIA_STUDIO  // Rain: 48 kHz, 32-bit float buffer and reverb
   };
   
   struct MixParameters {
@@ -67,30 +75,60 @@ class Processor {
     float dry_wet;
     float reverb_amount;
     bool output_gate;
+    // Rain: 0 to 1, darkens and warms the grains (not the dry signal).
+    float soften = 0.0f;
+    // Rain: when set, the dry signal is left out of the output (it still feeds
+    // the reverb) and the gain it would have had is written here for every
+    // sample, so the host can mix its own untouched copy of the input.
+    float* direct_gain = NULL;
   };
   
-  void Init(uint8_t* buffers[], uint16_t* reverb_buffer);
+  // Rain: studio_buffers (three banks of kStudioBankSize bytes) and
+  // studio_reverb_buffer (kStudioReverbSize floats) enable MEDIA_STUDIO.
+  void Init(uint8_t* buffers[], uint16_t* reverb_buffer,
+            uint8_t* studio_buffers[] = NULL, float* studio_reverb_buffer = NULL);
   void Configure(Media media, bool mono);
   
   inline Media media() const { return media_; }
+
+  // Rain: the recording, as stereo frames at history_rate() (the rate the buffer
+  // stores at, after any tape decimation), so it can be carried across a change of
+  // quality in pieces. ExportHistory copies frames out, newest first, starting
+  // first_age frames back. After Configure, BeginImport empties the new buffer and
+  // ImportHistory appends frames, oldest first, as if they had just been recorded.
+  inline float history_rate() const { return sample_rate() / float(ratio()); }
+  int history_capacity() const;
+  int history_length() const;
+  void ExportHistory(FloatFrame* newest_first, int first_age, int count) const;
+  void BeginImport();
+  void ImportHistory(const FloatFrame* oldest_first, int count);
   inline bool mono() const { return mono_; }
   
-  inline float sample_rate() const {
+  inline float sample_rate() const { return SampleRateFor(media_); }
+  inline int ratio() const { return RatioFor(media_); }
+
+  // Rain: the same, for any media (so a quality change can be planned ahead).
+  static inline float HistoryRateFor(Media media) {
+    return SampleRateFor(media) / float(RatioFor(media));
+  }
+  static int HistoryCapacityFor(Media media);
+
+  static inline float SampleRateFor(Media media) {
 #ifdef ENABLE_HARDWARE_24K
-    float sr[4] = { 24000.0f, 48000.0f, 32000.0f, 48000.0f };
+    float sr[5] = { 24000.0f, 48000.0f, 32000.0f, 48000.0f, 48000.0f };
 #else
-    float sr[4] = { 48000.0f, 48000.0f, 32000.0f, 48000.0f };
+    float sr[5] = { 48000.0f, 48000.0f, 32000.0f, 48000.0f, 48000.0f };
 #endif  // ENABLE_HARDWARE_24K
-    return sr[media_];
+    return sr[media];
   }
   
-  inline int ratio() const {
+  static inline int RatioFor(Media media) {
 #ifdef ENABLE_HARDWARE_24K
-    int ratio[4] = { 1, 2, 1, 1 };
+    int ratio[5] = { 1, 2, 1, 1, 1 };
 #else
-    int ratio[4] = { 2, 2, 1, 1 };
+    int ratio[5] = { 2, 2, 1, 1, 1 };
 #endif  // ENABLE_HARDWARE_24K
-    return ratio[media_];
+    return ratio[media];
   }
   
   inline uint8_t* delay_buffer_raw_bytes(size_t offset) {
@@ -107,6 +145,8 @@ class Processor {
         return processor_clean_tape_.mutable_delay_write_ptr(mono_);
       case MEDIA_VINTAGE_DIGITAL:
         return processor_vintage_digital_.mutable_delay_write_ptr(mono_);
+      case MEDIA_STUDIO:
+        return processor_studio_.mutable_delay_write_ptr(mono_);
       case MEDIA_DIGITAL:
       default:
         return processor_digital_.mutable_delay_write_ptr(mono_);
@@ -127,6 +167,8 @@ class Processor {
         return processor_clean_tape_.remaining(mono_);
       case MEDIA_VINTAGE_DIGITAL:
         return processor_vintage_digital_.remaining(mono_);
+      case MEDIA_STUDIO:
+        return processor_studio_.remaining(mono_);
       case MEDIA_DIGITAL:
       default:
         return processor_digital_.remaining(mono_);
@@ -134,6 +176,10 @@ class Processor {
   }
 
   inline void Trim() {
+    if (media_ == MEDIA_STUDIO) {
+      processor_studio_.Trim(mono_);
+      return;
+    }
     switch (media_) {
       case MEDIA_DIRTY_TAPE:
         processor_dirty_tape_.Trim(mono_);
@@ -188,6 +234,15 @@ class Processor {
       2> processor_dirty_tape_;
 #endif  // ENABLE_HARDWARE_24K
 
+  // Rain: Studio quality.
+  GranularProcessor<
+      RESOLUTION_FLOAT,
+      kStudioDelayFrames,
+      1,
+      kStudioBankSize> processor_studio_;
+  ReverbT<FORMAT_32_BIT> reverb_studio_;
+  bool has_studio_ = false;
+
   TriggerGenerator trigger_generator_;
   DelayController delay_controller_;
   
@@ -199,6 +254,10 @@ class Processor {
 
   float dry_;
   float wet_;
+
+  // Rain: state of the SOFTEN low-pass (two one-pole stages per channel).
+  void Soften(float amount, FloatFrame* out, size_t size);
+  float soften_state_[2][4] = { { 0.0f, 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f, 0.0f } };
   
   WowAndFlutter wow_and_flutter_;
   Reverb reverb_;

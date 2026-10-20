@@ -29,6 +29,8 @@
 #ifndef BEADS_DSP_GRANULAR_PROCESSOR_H_
 #define BEADS_DSP_GRANULAR_PROCESSOR_H_
 
+#include <algorithm>
+
 #include "stmlib/stmlib.h"
 #include "stmlib/dsp/filter.h"
 #include "stmlib/dsp/parameter_interpolator.h"
@@ -41,7 +43,8 @@
 
 namespace beads {
 
-template<Resolution resolution, int max_delay, int ratio>
+// Rain: bank_size added (default as upstream) so Studio quality can use bigger banks.
+template<Resolution resolution, int max_delay, int ratio, size_t bank_size = 262144>
 class GranularProcessor {
  public:
   GranularProcessor() { }
@@ -107,6 +110,27 @@ class GranularProcessor {
         : stereo_delay_line_.remaining();
   }
   
+  // Rain: copy the stereo recording out, newest frame first, and write frames
+  // back in, oldest first, so a change of quality keeps what was recorded. Both
+  // work in pieces so the copy can be spread over several audio callbacks.
+  inline int history_length() const {
+    return std::min(stereo_delay_line_.duration(), int(max_delay));
+  }
+
+  inline void ExportHistory(FloatFrame* newest_first, int first_age, int count) const {
+    for (int k = 0; k < count; ++k) {
+      newest_first[k] = stereo_delay_line_.History(first_age + k);
+    }
+  }
+
+  inline void ImportFrame(FloatFrame f) {
+    stereo_delay_line_.Write(f);
+  }
+
+  static inline int history_capacity() {
+    return max_delay;
+  }
+
   inline uint8_t* delay_buffer_raw_bytes(bool mono, size_t offset) {
     // Independently of the stereo/mono setting, we're writing in the same
     // bytes anyway!
@@ -286,8 +310,8 @@ class GranularProcessor {
     
     const float max_feedback_gain = taps ? 1.5f : 3.0f;
 
-    const float lp_coefficients[RESOLUTION_LAST] = { 0.75f, 0.9f, 0.999f };
-    const float soft_limit_gains[RESOLUTION_LAST] = { 1.75f, 1.3f, 0.0f };
+    const float lp_coefficients[RESOLUTION_LAST] = { 0.75f, 0.9f, 0.999f, 0.999f };
+    const float soft_limit_gains[RESOLUTION_LAST] = { 1.75f, 1.3f, 0.0f, 0.0f };
 
     const float lp_coefficient = lp_coefficients[resolution];
     const float soft_limit_gain = soft_limit_gains[resolution];
@@ -378,8 +402,8 @@ class GranularProcessor {
   DelayGranularPlayer granular_player_;
   MultitapDelay multitap_delay_;
   
-  DelayLine<resolution, max_delay, 2> stereo_delay_line_;
-  DelayLine<resolution, max_delay * 2, 1> mono_delay_line_;
+  DelayLine<resolution, max_delay, 2, bank_size> stereo_delay_line_;
+  DelayLine<resolution, max_delay * 2, 1, bank_size> mono_delay_line_;
   
   stmlib::SampleRateConverter<stmlib::SRC_DOWN, ratio, 48> src_down_[2];
   stmlib::SampleRateConverter<stmlib::SRC_UP, ratio, 48> src_up_[2];

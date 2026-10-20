@@ -27,10 +27,28 @@ namespace ParamID
     inline constexpr auto autoGain    = "autogain";
     inline constexpr auto inputGain   = "inputgain";
     inline constexpr auto outputGain  = "outputgain";
+    inline constexpr auto sync        = "sync";
+    inline constexpr auto syncRate    = "syncrate";
+    inline constexpr auto scale       = "scale";
+    inline constexpr auto mod1Rate    = "mod1rate";
+    inline constexpr auto mod1Depth   = "mod1depth";
+    inline constexpr auto mod1Target  = "mod1target";
+    inline constexpr auto mod2Rate    = "mod2rate";
+    inline constexpr auto mod2Depth   = "mod2depth";
+    inline constexpr auto mod2Target  = "mod2target";
+    inline constexpr auto overlap     = "overlap";
+    inline constexpr auto reverse     = "reverse";
+    inline constexpr auto soften      = "soften";
+    inline constexpr auto randomPan   = "randompan";
+    inline constexpr auto formant     = "formant";
+    inline constexpr auto bypass      = "bypass";
 }
 
-// In front-panel order. Must match dsp::Quality.
+// Must match dsp::Quality (Studio was added last; the panel shows it first).
 juce::StringArray qualityNames();
+juce::StringArray syncRateNames();  // dsp::kSyncDivisionBeats
+juce::StringArray scaleNames();     // dsp::Scale
+juce::StringArray modTargetNames(); // dsp::ModTarget
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
