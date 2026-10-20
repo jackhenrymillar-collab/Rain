@@ -41,6 +41,7 @@ namespace ParamID
     inline constexpr auto soften      = "soften";
     inline constexpr auto randomPan   = "randompan";
     inline constexpr auto formant     = "formant";
+    inline constexpr auto smoothRandom = "smoothRandom";
     inline constexpr auto bypass      = "bypass";
 }
 

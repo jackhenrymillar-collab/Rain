@@ -37,6 +37,7 @@ RainProcessor::RainProcessor()
     soften      = state.getRawParameterValue (ParamID::soften);
     randomPan   = state.getRawParameterValue (ParamID::randomPan);
     formant     = state.getRawParameterValue (ParamID::formant);
+    smoothRandom = state.getRawParameterValue (ParamID::smoothRandom);
     bypass      = state.getRawParameterValue (ParamID::bypass);
     modRate     = { state.getRawParameterValue (ParamID::mod1Rate), state.getRawParameterValue (ParamID::mod2Rate) };
     modDepth    = { state.getRawParameterValue (ParamID::mod1Depth), state.getRawParameterValue (ParamID::mod2Depth) };
@@ -119,6 +120,7 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.soften = soften->load() * 0.01f;
     p.randomPan = randomPan->load() * 0.01f;
     p.formant = formant->load() > 0.5f;
+    p.smoothRandom = smoothRandom->load() > 0.5f;
     p.bypass = bypass->load() > 0.5f;
     for (std::size_t m = 0; m < 2; ++m)
     {

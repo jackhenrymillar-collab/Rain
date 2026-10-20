@@ -115,6 +115,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::scale, v }, "Scale", scaleNames(), 0));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::overlap, v }, "Overlap", false));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::formant, v }, "Formant", false));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::smoothRandom, v }, "Smooth Random", false));
     percent (ParamID::reverse, "Reverse", 0.0f);
     percent (ParamID::soften, "Soften", 25.0f);
     percent (ParamID::randomPan, "Random Pan", 0.0f);

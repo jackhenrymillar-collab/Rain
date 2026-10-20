@@ -80,6 +80,10 @@ struct RainParams
     // Formant: pitched grains keep their tone colour (voices don't go chipmunk or
     // monster), by repeating pitch-period slices instead of resampling.
     bool formant = false;
+    // Smooth random: the RANDOM knobs follow a slowly wandering random value with a
+    // little per-grain variation, instead of a fresh random value every grain (the
+    // module's way, and the default).
+    bool smoothRandom = false;
 
     // Bypass: the output crossfades (20 ms) to the dry input, delayed by the reported
     // latency so it lines up. Rain keeps recording underneath, so it comes back warm.
@@ -115,6 +119,7 @@ struct EngineMonitor
     std::atomic<float> spawnDensity { 0.5f }; // DENSITY as Beads gets it (Overlap may raise the rate)
     // The slow random drifts behind TIME, SIZE, SHAPE and PITCH RANDOM (-1 to +1).
     std::array<std::atomic<float>, 4> randomDrift {};
+    std::atomic<float> randomJitter { 1.0f }; // per-grain share of the randomness (1 = module)
 
     std::atomic<float> bufferSeconds { 4.0f };
     std::atomic<float> bpm { 120.0f };
