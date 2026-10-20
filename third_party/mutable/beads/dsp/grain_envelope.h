@@ -53,12 +53,16 @@ class GrainEnvelope {
     phase_increment_[STAGE_RELEASE] = 0.5f;
     phase_increment_[STAGE_DONE] = 0.0f;
     smoothness_ = 0.0f;
+    attack_smoothness_ = 0.0f;
     
     min_attack_ = BEADS_MIN_ATTACK_SECONDS * sample_rate;
     min_release_ = 0.010f * sample_rate;
   }
 
-  inline void Start(float duration, float shape) {
+  // Rain: smudge (0 to 1) stretches the attack (up to a quarter of the grain,
+  // or 30 ms) and rounds it into an S-curve, so grains swell in instead of
+  // clicking. The release is left to SHAPE. 0 is the module's envelope.
+  inline void Start(float duration, float shape, float smudge = 0.0f) {
     stage_ = STAGE_ATTACK;
     phase_ = 0.0f;
     
@@ -82,20 +86,29 @@ class GrainEnvelope {
     //            0.75           0        0.25            0.5
     // Reverse       1           0           0              0
     
-    const float attack_duration = std::max(
+    float attack_duration = std::max(
         duration * attack,
         min_attack_ * (1.0f + 3.0f * sustain));
-    const float sustain_duration = std::max(duration * sustain, 2.0f);
-    const float release_duration = std::max(duration * release, min_release_);
+    float sustain_duration = std::max(duration * sustain, 2.0f);
+    float release_duration = std::max(duration * release, min_release_);
+    if (smudge > 0.0f) {
+      const float edge = smudge * std::min(0.25f * duration, 60.0f * min_attack_);
+      attack_duration = std::max(attack_duration, edge);
+      sustain_duration = std::max(
+          std::min(sustain_duration,
+                   duration - attack_duration - release_duration), 2.0f);
+    }
     
     phase_increment_[STAGE_ATTACK] = 1.0f / attack_duration;
     phase_increment_[STAGE_SUSTAIN] = 1.0f / sustain_duration;
     phase_increment_[STAGE_RELEASE] = 1.0f / release_duration;
     smoothness_ = attack < 0.5f ? 2.0f * attack : 2.0f - 2.0f * attack;
+    attack_smoothness_ = smoothness_ + (1.0f - smoothness_) * smudge;
   }
 
-  inline void Start(float duration, float shape, float fractional_sample) {
-    Start(duration, shape);
+  inline void Start(float duration, float shape, float fractional_sample,
+                    float smudge) {
+    Start(duration, shape, smudge);
     phase_ += phase_increment_[stage_] * fractional_sample;
     WrapPhase();
   }
@@ -124,7 +137,8 @@ class GrainEnvelope {
       const bool attack = stage_ == STAGE_ATTACK;
       const float t = attack ? phase_ : 1.0f - phase_;
       const float base = attack ? t : (t * t) * (t * t);
-      value = base + (stmlib::SmoothStep(t) - base) * smoothness_;
+      value = base + (stmlib::SmoothStep(t) - base) *
+          (attack ? attack_smoothness_ : smoothness_);
     }
 
     phase_ += phase_increment_[stage_];
@@ -150,6 +164,7 @@ class GrainEnvelope {
   float phase_;
   float phase_increment_[STAGE_LAST];
   float smoothness_;
+  float attack_smoothness_ = 0.0f;
   
   float min_attack_;
   float min_release_;

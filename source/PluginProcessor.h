@@ -84,8 +84,10 @@ private:
     std::atomic<float>* overlap = nullptr;
     std::atomic<float>* reverse = nullptr;
     std::atomic<float>* soften = nullptr;
+    std::atomic<float>* smudge = nullptr;
     std::atomic<float>* randomPan = nullptr;
     std::atomic<float>* formant = nullptr;
+    std::atomic<float>* smoothRandom = nullptr;
     std::atomic<float>* bypass = nullptr;
     std::array<std::atomic<float>*, 2> modRate {}, modDepth {}, modTarget {};
 

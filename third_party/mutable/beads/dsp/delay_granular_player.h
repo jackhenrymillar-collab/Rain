@@ -75,6 +75,7 @@ class DelayGranularPlayer : public GranularPlayer<DelayGrain, 32> {
           ? 1.0f - std::exp(-1.0f / (p.pitch_glide * sample_rate_))
           : 0.0f;
       options.previous = previous_;
+      options.smudge = p.smudge;
 
       DelayGrain* grain = new_grain();
       grain->Start(

@@ -205,9 +205,10 @@ TEST_CASE ("Overlap keeps the grain size and raises the grain rate to fill gaps"
         const auto [lengthOn, densityOn] = run (true, 0.4f, density);
         CHECK (lengthOn == Catch::Approx (lengthOff)); // SIZE is untouched
         CHECK (densityOff == Catch::Approx (density));
-        // Sparse grains come often enough to overlap (2x regular, 3x random).
+        // Sparse grains come often enough to overlap (2x regular; 5x random, since
+        // random triggers bunch up and leave gaps at lower counts).
         const float rate = RainEngine::grainRate (densityOn, 0.0f);
-        CHECK (rate * lengthOn == Catch::Approx (density < 0.5f ? 2.0f : 3.0f).epsilon (0.02));
+        CHECK (rate * lengthOn == Catch::Approx (density < 0.5f ? 2.0f : 5.0f).epsilon (0.02));
     }
 
     // Already dense grains, and DENSITY at noon, are left alone.
@@ -380,4 +381,22 @@ TEST_CASE ("Random values follow a slow drift with a little per-grain variation"
     }
     CHECK (lo < 0.05f);
     CHECK (hi > 0.95f);
+}
+
+TEST_CASE ("Randomness is per grain by default and smooth only when asked")
+{
+    for (bool smooth : { false, true })
+    {
+        RainEngine e;
+        RainParams p;
+        p.timeRandom = 1.0f;
+        p.smoothRandom = smooth;
+        e.setParams (p);
+        e.prepare (48000.0, 512);
+        std::vector<float> l (512 * 94, 0.1f), r = l;
+        for (std::size_t i = 0; i < l.size(); i += 512)
+            e.process (l.data() + i, r.data() + i, 512);
+        INFO ("smooth " << smooth);
+        CHECK (e.monitor().randomJitter.load() == Catch::Approx (smooth ? 0.2f : 1.0f));
+    }
 }

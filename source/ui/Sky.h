@@ -14,6 +14,8 @@ namespace rain::ui
 //                                    no mist, fainter rain, and the moon wanes to a crescent
 //   bloom  (SHAPE)                   the moon's glow blooms into a wide halo ring
 //   storm  (FEEDBACK)                forked lightning with an afterglow, brighter stars
+//   time   (TIME)                    the night turns: stars, nebulae and moon wheel
+//                                    across the sky the further back droplets reach
 // Bypass takes the moon to a thin crescent and the sky very dark. The dark side of
 // the moon stays faintly visible in earthshine, craters and all.
 class SkyBackground final : public juce::Component
@@ -28,13 +30,15 @@ public:
 
     struct Weather
     {
-        float rain = 0.5f, night = 0.0f, bloom = 0.5f, storm = 0.0f;
+        float rain = 0.5f, night = 0.0f, bloom = 0.5f, storm = 0.0f, time = 0.0f;
     };
     void setWeather (Weather w) noexcept;
     void setBypassed (bool b) noexcept { eclipseTarget = b ? 1.0f : 0.0f; }
 
-    // Where the moon sits, in design coordinates (it is also the bypass switch).
+    // Where the moon sits at TIME 0, in design coordinates (it is also the bypass switch).
     static juce::Rectangle<float> moonBounds() noexcept { return { 1004.0f, 22.0f, 100.0f, 100.0f }; }
+    // Where it is now, as TIME turns the sky.
+    juce::Rectangle<float> currentMoonBounds() const noexcept;
 
     // Test hook: strike lightning now.
     void strikeLightning();
@@ -44,6 +48,9 @@ private:
     void drawStars (juce::Graphics&, float sx, float sy);
     void drawAurora (juce::Graphics&, float sx, float sy, float amount);
     void drawMoon (juce::Graphics&, float sx, float sy);
+    // Turns a design-space point with the sky, about a pole far below the panel.
+    juce::Point<float> turned (juce::Point<float> p) const noexcept;
+    juce::AffineTransform turning() const noexcept;
 
     struct Streak { float x, phase, length, alpha, speed; };
     struct Star { float x, y, radius, alpha, twinkle, speed; };
@@ -62,7 +69,7 @@ private:
     // decor: panels, wordmark and headings, always on top.
     juce::Image sky, mist, nightSky, decor, starGlow, aurora;
     std::array<Streak, 260> streaks {};
-    std::array<Star, 700> stars {};
+    std::array<Star, 900> stars {};
     std::vector<Bolt> bolts;
     juce::Random random;
 

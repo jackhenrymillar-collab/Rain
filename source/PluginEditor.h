@@ -58,6 +58,7 @@ private:
     ui::LevelMeter inputMeter { -12.0f, -1.0f }, outputMeter { -6.0f, -1.0f };
     juce::TextButton overlapButton { "OVERLAP" };
     juce::TextButton formantButton { "FORMANT" };
+    juce::TextButton smoothButton { "SMOOTH" };
 
     // Motion: two modulators.
     struct ModRow

@@ -75,6 +75,7 @@ RainEditor::RainEditor (RainProcessor& p)
     saveButton.onClick = [this] { presetBar.showSaveDialog(); };
 
     content.addAndMakeVisible (grainDisplay);
+    moon->toFront (false); // the moon can drift behind the visualiser; keep it clickable
 
     // Knobs.
     const std::pair<const char*, const char*> large[] = {
@@ -99,6 +100,7 @@ RainEditor::RainEditor (RainProcessor& p)
     // Grain character: how each grain sounds and where it sits.
     const std::tuple<const char*, const char*, const char*> character[] = {
         { ParamID::reverse, "REVERSE", "Chance each droplet plays backwards" },
+        { ParamID::smudge, "SMUDGE", "Smudges the attack of every droplet: hits and plucks inside it bloom rather than click, and droplets swell in and out instead of chopping" },
         { ParamID::soften, "SOFTEN", "Rounds off the highs and lows of the droplets, leaving the dry signal alone" },
         { ParamID::randomPan, "RANDOM PAN", "Places each droplet at a random point in the stereo field" },
     };
@@ -112,6 +114,7 @@ RainEditor::RainEditor (RainProcessor& p)
     // Overlap: grains keep their length, and come often enough to overlap.
     overlapButton.setTooltip ("Overlap: fills the gaps. When droplets are sparse they come more often, so each one overlaps the next. Droplet length stays as SIZE sets it");
     content.addAndMakeVisible (overlapButton);
+    smoothButton.setTooltip ("Smooth random: the RANDOM knobs wander slowly instead of picking a fresh value for every droplet, so textures evolve rather than scatter. Off is the module's per-droplet randomness");
     formantButton.setTooltip ("Formant: pitched droplets keep the tone colour of the source, so voices don't go chipmunk going up or monster going down");
 
     // Motion.
@@ -188,14 +191,14 @@ RainEditor::RainEditor (RainProcessor& p)
     const std::pair<TextButton*, const char*> toggles[] = {
         { &freezeButton, ParamID::freeze }, { &seedLockButton, ParamID::seedLock },
         { &autoGainButton, ParamID::autoGain }, { &syncButton, ParamID::sync }, { &overlapButton, ParamID::overlap },
-        { &formantButton, ParamID::formant },
+        { &formantButton, ParamID::formant }, { &smoothButton, ParamID::smoothRandom },
     };
     for (const auto& [button, id] : toggles)
     {
         button->setClickingTogglesState (true);
         buttonAttachments.push_back (std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (state, id, *button));
     }
-    for (auto* b : { &freezeButton, &seedButton, &seedLockButton, &autoGainButton, &syncButton, &overlapButton, &formantButton })
+    for (auto* b : { &freezeButton, &seedButton, &seedLockButton, &autoGainButton, &syncButton, &overlapButton, &formantButton, &smoothButton })
     {
         b->getProperties().set ("pill", true);
         content.addAndMakeVisible (*b);
@@ -323,10 +326,15 @@ void RainEditor::tick()
         const float r = mon.effective[static_cast<size_t> (dsp::ModTarget::reverb)].load();
         const float shape = mon.effective[static_cast<size_t> (dsp::ModTarget::shape)].load();
         const float fb = mon.effective[static_cast<size_t> (dsp::ModTarget::feedback)].load();
-        sky.setWeather ({ jlimit (0.0f, 1.0f, std::abs (d - 0.5f) * 2.0f), r, shape, fb });
+        const float t = mon.effective[static_cast<size_t> (dsp::ModTarget::time)].load();
+        sky.setWeather ({ jlimit (0.0f, 1.0f, std::abs (d - 0.5f) * 2.0f), r, shape, fb, t });
     }
     sky.setBypassed (moon->isOn());
     sky.advance (dt);
+    // The moon (the bypass switch) travels with the sky.
+    const auto moonArea = sky.currentMoonBounds().toNearestInt();
+    if (moon->getBounds() != moonArea)
+        moon->setBounds (moonArea);
     grainDisplay.advance (dt);
     auto& monitor = processor.getMonitor();
     inputMeter.push (monitor.inputPeak.exchange (0.0f, std::memory_order_relaxed), static_cast<float> (dt));
@@ -345,7 +353,7 @@ void RainEditor::resized()
 void RainEditor::layoutContent()
 {
     sky.setBounds (content.getLocalBounds());
-    moon->setBounds (ui::SkyBackground::moonBounds().toNearestInt());
+    moon->setBounds (sky.currentMoonBounds().toNearestInt());
 
     grainDisplay.setBounds ((Theme::designWidth - 600) / 2, 70, 600, 200); // centred on the panel
 
@@ -358,6 +366,7 @@ void RainEditor::layoutContent()
     // Droplet switches, beside the RANDOM knobs.
     overlapButton.setBounds (columnX (4) + (kColumnWidth - 128) / 2, 482, 128, 38);
     formantButton.setBounds (columnX (5) + (kColumnWidth - 128) / 2, 482, 128, 38);
+    smoothButton.setBounds (columnX (6) + (kColumnWidth - 128) / 2, 482, 128, 38);
 
     // Motion rows.
     for (size_t m = 0; m < 2; ++m)
@@ -374,7 +383,7 @@ void RainEditor::layoutContent()
 
     // Grain character.
     for (size_t i = 0; i < characterKnobs.size(); ++i)
-        characterKnobs[i]->setBounds (46 + static_cast<int> (i) * 96, 572, 96, 116);
+        characterKnobs[i]->setBounds (42 + static_cast<int> (i) * 74, 572, 74, 116);
 
     // Tempo and scale. (The tempo and scale states show as tooltips; there's no
     // room for the readouts beside them.)

@@ -100,12 +100,14 @@ void GrainDisplay::spawn()
         return;
 
     auto& e = monitor.effective;
-    // As the engine does it: a slowly drifting random value plus a little per grain.
+    // As the engine does it: a fresh random value per grain, or with Smooth Random a
+    // slowly drifting value plus a little per grain.
     const auto lerpRandom = [this] (float base, float knob, int drift) {
         const float a = randomAmount (knob * 0.01f);
         const float blend = a > 0.0f ? a : std::min (1.0f, -3.0f * a * rng.nextFloat());
         const float d = monitor.randomDrift[static_cast<size_t> (drift)].load();
-        const float r = 0.8f * (0.5f + 0.5f * d) + 0.2f * rng.nextFloat();
+        const float j = monitor.randomJitter.load();
+        const float r = (1.0f - j) * (0.5f + 0.5f * d) + j * rng.nextFloat();
         return base + (r - base) * blend;
     };
 

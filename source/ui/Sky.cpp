@@ -12,6 +12,8 @@ namespace
 {
     constexpr float kW = static_cast<float> (Theme::designWidth);
     constexpr float kH = static_cast<float> (Theme::designHeight);
+    constexpr float kNebulaX = 0.35f;   // nebula overhang each side, in panel widths
+    constexpr float kNebulaTop = 0.4f;  // and above the top, in panel heights
     constexpr float kPi = MathConstants<float>::pi;
 
     // A soft cloud or glow: an ellipse whose colour fades to nothing at its edge.
@@ -78,7 +80,8 @@ SkyBackground::SkyBackground() : random (19)
     Random sr (11);
     for (auto& s : stars)
     {
-        s.x = sr.nextFloat() * kW;
+        // A little past the right edge too: the sky turns them in as TIME rises.
+        s.x = sr.nextFloat() * kW * 1.25f;
         s.y = sr.nextFloat() * kH * 0.85f;
         s.radius = sr.nextFloat() > 0.9f ? 1.8f : (sr.nextFloat() > 0.5f ? 1.15f : 0.75f);
         s.alpha = 0.3f + sr.nextFloat() * 0.65f;
@@ -110,6 +113,32 @@ void SkyBackground::setWeather (Weather w) noexcept
     target.night = jlimit (0.0f, 1.0f, w.night);
     target.bloom = jlimit (0.0f, 1.0f, w.bloom);
     target.storm = jlimit (0.0f, 1.0f, w.storm);
+    target.time = jlimit (0.0f, 1.0f, w.time);
+}
+
+namespace
+{
+    // The sky turns about a pole well below the panel, by up to kSkySpan radians,
+    // carrying the moon about a fifth of the way across at full TIME.
+    constexpr float kPoleY = 3.2f;   // in panel heights
+    constexpr float kSkySpan = 0.087f;
+}
+
+AffineTransform SkyBackground::turning() const noexcept
+{
+    // Counter-clockwise, so the sky (and the moon) rise and travel left.
+    // The pole sits under the moon, so the moon travels left without leaving the top.
+    return AffineTransform::rotation (-amount.time * kSkySpan, moonBounds().getCentreX(), kH * kPoleY);
+}
+
+Point<float> SkyBackground::turned (Point<float> p) const noexcept
+{
+    return p.transformedBy (turning());
+}
+
+Rectangle<float> SkyBackground::currentMoonBounds() const noexcept
+{
+    return moonBounds().withCentre (turned (moonBounds().getCentre()));
 }
 
 void SkyBackground::advance (float seconds)
@@ -121,6 +150,8 @@ void SkyBackground::advance (float seconds)
     amount.night = smooth (amount.night, target.night, k);
     amount.bloom = smooth (amount.bloom, target.bloom, k);
     amount.storm = smooth (amount.storm, target.storm, k);
+    // The sky turns a little slower, like hands on a clock face.
+    amount.time = smooth (amount.time, target.time, 1.0f - std::exp (-seconds / 0.6f));
     const float ke = 1.0f - std::exp (-seconds / 0.25f);
     eclipseAmount += ke * (eclipseTarget - eclipseAmount);
     if (std::abs (eclipseAmount - eclipseTarget) < 0.002f)
@@ -199,7 +230,7 @@ void SkyBackground::addBranch (std::vector<Branch>& out, Point<float> from, Poin
 
 void SkyBackground::strikeLightning()
 {
-    const auto moonCentre = moonBounds().getCentre();
+    const auto moonCentre = currentMoonBounds().getCentre();
     float x = kW * (0.1f + random.nextFloat() * 0.75f);
     if (std::abs (x - moonCentre.x) < 150.0f)
         x = moonCentre.x - 200.0f;
@@ -261,7 +292,9 @@ void SkyBackground::renderStatic()
     const auto make = [scale, w, h] (Image::PixelFormat f) { return Image (f, static_cast<int> (w * scale), static_cast<int> (h * scale), true); };
     sky = make (Image::RGB);
     mist = make (Image::ARGB);
-    nightSky = make (Image::ARGB);
+    // The nebulae turn with TIME, so they are painted with room to spare on every side
+    // that can swing into view (at 1x: they are soft anyway).
+    nightSky = Image (Image::ARGB, static_cast<int> (w * (1.0f + 2.0f * kNebulaX)), static_cast<int> (h * (1.0f + kNebulaTop)), true);
     decor = make (Image::ARGB);
 
     {
@@ -285,18 +318,20 @@ void SkyBackground::renderStatic()
     {
         // Vast nebulae: big colour washes plus a drifting band of smaller wisps across the sky.
         Graphics n (nightSky);
-        n.addTransform (AffineTransform::scale (scale));
+        n.addTransform (AffineTransform::translation (kW * kNebulaX, kH * kNebulaTop));
         const float sh = 600.0f; // the open sky above the knob panels
         softCircle (n, { kW * 0.28f, sh * 0.3f }, 620.0f, 250.0f, Colour (110, 60, 190).withAlpha (0.2f));
         softCircle (n, { kW * 0.5f, sh * 0.42f }, 480.0f, 190.0f, Colour (190, 80, 160).withAlpha (0.12f));
         softCircle (n, { kW * 0.78f, sh * 0.22f }, 560.0f, 220.0f, Colour (50, 130, 190).withAlpha (0.15f));
         softCircle (n, { kW * 0.1f, sh * 0.62f }, 420.0f, 170.0f, Colour (70, 110, 210).withAlpha (0.12f));
+        softCircle (n, { kW * -0.3f, sh * 0.5f }, 520.0f, 220.0f, Colour (90, 80, 200).withAlpha (0.14f));
+        softCircle (n, { kW * 1.3f, sh * 0.2f }, 520.0f, 210.0f, Colour (150, 70, 190).withAlpha (0.13f));
         const Colour wisps[] = { Colour (150, 80, 210), Colour (210, 100, 170), Colour (80, 160, 210), Colour (120, 100, 230) };
         Random rn (23);
-        for (int i = 0; i < 70; ++i)
+        for (int i = 0; i < 110; ++i)
         {
-            const float u = rn.nextFloat();
-            const float x = kW * (-0.05f + u * 1.1f);
+            const float u = -0.35f + rn.nextFloat() * 1.7f;
+            const float x = kW * u;
             const float y = sh * (0.62f - 0.5f * u + 0.12f * std::sin (u * 7.0f) + (rn.nextFloat() - 0.5f) * 0.14f);
             const auto c = wisps[rn.nextInt (4)];
             const float rx = 60.0f + rn.nextFloat() * 140.0f, ry = 24.0f + rn.nextFloat() * 50.0f;
@@ -342,10 +377,15 @@ void SkyBackground::drawStars (Graphics& g, float, float)
     // DENSITY adds some stars and CLOUD many more. FEEDBACK makes them brighter, a touch
     // larger, and gives them a soft glow.
     const float storm = amount.storm;
-    const auto count = std::min (stars.size(), static_cast<size_t> (60.0f + amount.rain * 200.0f + amount.night * 420.0f));
+    // (Stars are scattered a quarter wider than the panel, so a quarter more are drawn.)
+    const auto count = std::min (stars.size(), static_cast<size_t> (1.25f * (60.0f + amount.rain * 200.0f + amount.night * 420.0f)));
+    const auto turn = turning();
     for (size_t i = 0; i < count; ++i)
     {
         const auto& s = stars[i];
+        const auto p = Point<float> (s.x, s.y).transformedBy (turn);
+        if (p.x < -10.0f || p.x > kW + 10.0f || p.y < -10.0f || p.y > kH * 0.9f)
+            continue;
         const float tw = 0.75f + 0.25f * std::sin (time * s.speed + s.twinkle);
         const float r = s.radius * (1.0f + 0.6f * storm);
         const float glow = std::min (1.0f, storm * 1.4f * (s.radius > 1.0f ? 1.0f : 0.6f));
@@ -353,11 +393,11 @@ void SkyBackground::drawStars (Graphics& g, float, float)
         {
             const float glowSize = r * (14.0f + 12.0f * storm);
             g.setOpacity (glow * tw * std::min (1.0f, s.alpha * 1.5f));
-            g.drawImage (starGlow, Rectangle<float> (glowSize, glowSize).withCentre ({ s.x, s.y }));
+            g.drawImage (starGlow, Rectangle<float> (glowSize, glowSize).withCentre (p));
             g.setOpacity (1.0f);
         }
         g.setColour (Colour (236, 240, 255).withAlpha (std::min (1.0f, s.alpha * tw * (1.0f + 1.5f * storm) + 0.25f * storm)));
-        g.fillEllipse (Rectangle<float> (r * 2.0f, r * 2.0f).withCentre ({ s.x, s.y }));
+        g.fillEllipse (Rectangle<float> (r * 2.0f, r * 2.0f).withCentre (p));
     }
 }
 
@@ -408,7 +448,7 @@ void SkyBackground::drawAurora (Graphics& g, float, float, float strength)
 
 void SkyBackground::drawMoon (Graphics& g, float, float)
 {
-    const auto bounds = moonBounds();
+    const auto bounds = currentMoonBounds();
     const auto c = bounds.getCentre();
     const float r = bounds.getWidth() * 0.5f;
     const float e = eclipseAmount, night = amount.night;
@@ -507,7 +547,7 @@ void SkyBackground::paint (Graphics& g)
         g.setGradientFill (dark);
         g.fillRect (design);
         g.setOpacity (night);
-        g.drawImage (nightSky, design);
+        g.drawImageTransformed (nightSky, AffineTransform::translation (-kW * kNebulaX, -kH * kNebulaTop).followedBy (turning()));
         g.setOpacity (1.0f);
     }
 

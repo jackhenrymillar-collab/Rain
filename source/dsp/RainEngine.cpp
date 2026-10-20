@@ -113,9 +113,10 @@ float RainEngine::overlapDensity (float d, float grainLength) noexcept
     const float rate = grainRate (d, 0.0f);
     if (rate <= 0.0f)
         return d;
-    // Regular grains overlap twice over; random ones need a little more to leave no gaps.
+    // Regular grains overlap twice over. Random triggers bunch up and leave gaps (heard
+    // as the level dipping in and out) unless they overlap about five deep.
     const bool regular = d < 0.5f;
-    const float needed = std::min ((regular ? 2.0f : 3.0f) / std::max (grainLength, 1.0e-3f), 0.5f * kMaxTriggerRate);
+    const float needed = std::min ((regular ? 2.0f : 5.0f) / std::max (grainLength, 1.0e-3f), 0.5f * kMaxTriggerRate);
     if (rate >= needed)
         return d;
     // Invert grainRate on the same side of noon.
@@ -507,7 +508,8 @@ void RainEngine::runBeadsBlock()
                                   { &q.density, &smoothed.density }, { &q.pitchSemis, &smoothed.pitchSemis },
                                   { &q.timeRandom, &smoothed.timeRandom }, { &q.sizeRandom, &smoothed.sizeRandom },
                                   { &q.shapeRandom, &smoothed.shapeRandom }, { &q.pitchRandom, &smoothed.pitchRandom },
-                                  { &q.reverse, &smoothed.reverse }, { &q.randomPan, &smoothed.randomPan } })
+                                  { &q.reverse, &smoothed.reverse }, { &q.randomPan, &smoothed.randomPan },
+                                  { &q.smudge, &smoothed.smudge } })
     {
         *state += kKnobSmoothing * (*target - *state);
         *target = *state;
@@ -547,9 +549,12 @@ void RainEngine::runBeadsBlock()
     p.shape = knob (q.shape, q.shapeRandom);
     p.pitch = knob (q.pitchSemis, q.pitchRandom);
 
-    // Correlated randomness: rather than a fresh random value for every grain, each
-    // randomised control follows a slowly wandering random value, plus a little
-    // per-grain variation (kGrainJitter of it), so textures evolve instead of jitter.
+    // Randomness: by default a fresh random value for every grain, as on the module.
+    // With Smooth Random each randomised control follows a slowly wandering random
+    // value, plus a little per-grain variation (kGrainJitter of it), so textures
+    // evolve instead of jitter.
+    const float jitter = q.smoothRandom ? kGrainJitter : 1.0f;
+    mon.randomJitter.store (jitter, std::memory_order_relaxed);
     {
         const float dt = static_cast<float> (n) / beadsRate;
         beads::RandomizedParameter* targets[] = { &p.time, &p.size, &p.shape, &p.pitch };
@@ -557,13 +562,14 @@ void RainEngine::runBeadsBlock()
         {
             const float d = randomDrift[k].advance (kDriftRatesHz[k], dt);
             targets[k]->drift = d;
-            targets[k]->jitter = kGrainJitter;
+            targets[k]->jitter = jitter;
             mon.randomDrift[k].store (d, std::memory_order_relaxed);
         }
     }
     p.monophonic_mode = false;
     p.reverse_probability = std::clamp (q.reverse, 0.0f, 1.0f);
     p.random_pan = std::clamp (q.randomPan, 0.0f, 1.0f);
+    p.smudge = std::clamp (q.smudge, 0.0f, 1.0f);
 
     // Grain quality: Digital and Studio read grains with a band-limited interpolator,
     // line new grains up in phase with the one before, and glide briefly between
@@ -587,7 +593,7 @@ void RainEngine::runBeadsBlock()
         {
             for (int attempt = 0; attempt < 6; ++attempt)
             {
-                const float r = (1.0f - kGrainJitter) * p.pitch.drift + kGrainJitter * pitchRng.centred();
+                const float r = (1.0f - jitter) * p.pitch.drift + jitter * pitchRng.centred();
                 note = quantisePitch (q.pitchSemis + r * 24.0f * blend, q.scale);
                 if (pitchRng.uniform() < consonance (note))
                     break;
