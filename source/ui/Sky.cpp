@@ -374,9 +374,9 @@ void SkyBackground::drawAurora (Graphics& g, float, float, float strength)
         const float u = (static_cast<float> (i) + 0.5f) / static_cast<float> (aw);
         const float base = kH * (0.9f + 0.035f * std::sin (u * 9.0f + time * 0.35f) + 0.02f * std::sin (u * 23.0f - time * 0.6f));
         const float height = kH * (0.3f + 0.16f * (0.5f + 0.5f * std::sin (u * 5.3f - time * 0.22f)));
-        const float rays = 0.5f + 0.5f * std::sin (u * 31.0f + time * 0.9f + std::sin (u * 4.0f + time * 0.3f) * 2.0f);
-        const float glow = (0.35f + 0.65f * rays * rays) * (0.3f + 0.7f * (0.5f + 0.5f * std::sin (u * 3.1f - time * 0.17f)))
-                           * (0.8f + 0.2f * std::sin (u * 190.0f + std::sin (time * 0.5f + u * 11.0f) * 3.0f));
+        // Broad folds that drift slowly, with no fine striping, so the curtains stay soft.
+        const float folds = 0.5f + 0.5f * std::sin (u * 17.0f + time * 0.25f + std::sin (u * 4.0f + time * 0.12f) * 1.5f);
+        const float glow = (0.5f + 0.5f * folds) * (0.3f + 0.7f * (0.5f + 0.5f * std::sin (u * 3.1f - time * 0.17f)));
         const float a = 2.4f * strength * glow;
         const float tail = kH * 0.09f, top = base - height, f = height / (height + tail);
         for (int j = 0; j < ah; ++j)
@@ -399,6 +399,9 @@ void SkyBackground::drawAurora (Graphics& g, float, float, float strength)
             px.setPixelColour (i, j, c);
         }
     }
+    // drawImage uses the current fill's alpha, so reset it: otherwise the aurora takes the
+    // opacity of whichever star was drawn last and flickers with its twinkle.
+    g.setOpacity (1.0f);
     g.setImageResamplingQuality (Graphics::highResamplingQuality);
     g.drawImage (aurora, area);
 }
@@ -548,6 +551,7 @@ void SkyBackground::paint (Graphics& g)
         g.setOpacity (1.0f);
     }
 
+    g.setOpacity (1.0f);
     g.drawImage (decor, design);
 
     // Falling rain, slanted: a drizzle with DENSITY at noon, a downpour at either end.
