@@ -24,6 +24,7 @@ namespace
             case Quality::vintage:   return beads::Processor::MEDIA_VINTAGE_DIGITAL;
             case Quality::cleanTape: return beads::Processor::MEDIA_CLEAN_TAPE;
             case Quality::dirtyTape: return beads::Processor::MEDIA_DIRTY_TAPE;
+            case Quality::studio:    return beads::Processor::MEDIA_STUDIO;
         }
         return beads::Processor::MEDIA_DIGITAL;
     }
@@ -64,6 +65,7 @@ float RainEngine::bufferSeconds (Quality q) noexcept
         case Quality::vintage:   return 256000.0f / 32000.0f;        // 12-bit
         case Quality::cleanTape: return 256000.0f * 2.0f / 48000.0f; // 12-bit, half rate
         case Quality::dirtyTape: return 384000.0f * 2.0f / 48000.0f; // 8-bit, half rate
+        case Quality::studio:    return static_cast<float> (beads::kStudioDelayFrames) / 48000.0f; // float
     }
     return 4.0f;
 }
@@ -136,21 +138,26 @@ void RainEngine::prepare (double sampleRate, int /*maxBlockSize*/)
         block1.assign (kBlock1Size, 0);
         block2.assign (kBlock2Size, 0);
         reverbBuffer.assign (kReverbSize, 0);
+        studioBuffer.assign (beads::kStudioBufferSize, 0);
+        studioReverb.assign (beads::kStudioReverbSize, 0.0f);
         processor = std::make_unique<beads::Processor>();
         std::uint8_t* buffers[3] = { block1.data(), block1.data() + kBlock1Size / 2, block2.data() };
-        processor->Init (buffers, reverbBuffer.data());
+        std::uint8_t* studio[3] = { studioBuffer.data(), studioBuffer.data() + beads::kStudioBankSize,
+                                    studioBuffer.data() + 2 * beads::kStudioBankSize };
+        processor->Init (buffers, reverbBuffer.data(), studio, studioReverb.data());
     }
 
     for (int i = 0; i < kNumRates; ++i)
     {
         toBeadsAt[static_cast<size_t> (i)].prepare (fs, kBeadsRates[i]);
         fromBeadsAt[static_cast<size_t> (i)].prepare (kBeadsRates[i], fs);
+        gainFromBeadsAt[static_cast<size_t> (i)].prepare (kBeadsRates[i], fs);
     }
     subsonic.prepare (fs);
     limiter.prepare (fs, 0.977f); // -0.2 dBFS
     smoothedValid = false;
 
-    fifo.assign (kFifoSize, beads::FloatFrame { 0.0f, 0.0f });
+    fifo.assign (kFifoSize, OutFrame {});
     dryDelay.assign (kDryDelaySize, beads::FloatFrame { 0.0f, 0.0f });
     dryWrite = 0;
     bypassStep = static_cast<float> (1.0 / (0.02 * fs));
@@ -172,6 +179,8 @@ void RainEngine::reset()
     std::fill (block1.begin(), block1.end(), std::uint8_t { 0 });
     std::fill (block2.begin(), block2.end(), std::uint8_t { 0 });
     std::fill (reverbBuffer.begin(), reverbBuffer.end(), std::uint16_t { 0 });
+    std::fill (studioBuffer.begin(), studioBuffer.end(), std::uint8_t { 0 });
+    std::fill (studioReverb.begin(), studioReverb.end(), 0.0f);
     outputGain.snapTo (outputGain.getTarget());
     subsonic.reset();
     limiter.reset();
@@ -196,8 +205,10 @@ void RainEngine::configure (Quality q)
     const auto r = static_cast<size_t> (rateIndex (beadsRate));
     toBeads = &toBeadsAt[r];
     fromBeads = &fromBeadsAt[r];
+    gainFromBeads = &gainFromBeadsAt[r];
     toBeads->reset();
     fromBeads->reset();
+    gainFromBeads->reset();
 
     const auto clipping = q == Quality::dirtyTape ? InputGain::SoftClipping::on
                         : q == Quality::cleanTape ? InputGain::SoftClipping::dynamic
@@ -212,7 +223,7 @@ void RainEngine::configure (Quality q)
     const int prime = static_cast<int> (std::ceil (beadsBlock * hostPerBeads)) + 4;
     fifoRead = fifoWrite = 0;
     for (int i = 0; i < prime; ++i)
-        pushOutput (beads::FloatFrame { 0.0f, 0.0f });
+        pushOutput (OutFrame {});
 
     latency = prime + static_cast<int> (std::lround (toBeads->delay() + fromBeads->delay() * hostPerBeads)) + limiter.latency();
 }
@@ -225,7 +236,7 @@ void RainEngine::setParams (const RainParams& p)
         configure (p.quality);
 }
 
-void RainEngine::pushOutput (const beads::FloatFrame& f)
+void RainEngine::pushOutput (const OutFrame& f)
 {
     const std::size_t next = (fifoWrite + 1) & (kFifoSize - 1);
     if (next == fifoRead)
@@ -349,6 +360,15 @@ void RainEngine::runBeadsBlock()
     p.reverse_probability = std::clamp (q.reverse, 0.0f, 1.0f);
     p.random_pan = std::clamp (q.randomPan, 0.0f, 1.0f);
 
+    // Grain quality: Digital and Studio read grains with a band-limited interpolator,
+    // line new grains up in phase with the one before, and glide briefly between
+    // grain pitches. The lo-fi qualities keep the module's own grain reader.
+    const bool clean = configured == Quality::digital || configured == Quality::studio;
+    p.clean_reader = clean;
+    p.phase_align = clean;
+    p.pitch_glide = clean ? 0.012f : 0.0f;
+    p.formant = q.formant;
+
     if (q.scale != Scale::off)
     {
         // To keep every grain in the scale, Rain draws the random pitch itself, the way
@@ -381,6 +401,7 @@ void RainEngine::runBeadsBlock()
     m.reverb_amount = mixPot (q.reverb);
     m.output_gate = false;
     m.soften = q.soften;
+    m.direct_gain = beadsDryGain.data();
 
     bool freeze[kMaxBeadsBlock];
     std::fill (freeze, freeze + kMaxBeadsBlock, q.freeze);
@@ -417,7 +438,17 @@ void RainEngine::runBeadsBlock()
         beads::FloatFrame f = beadsOut[i];
         f.l = std::clamp (f.l, -1.0f, 1.0f) / kHeadroom;
         f.r = std::clamp (f.r, -1.0f, 1.0f) / kHeadroom;
-        fromBeads->push (f, [this] (const beads::FloatFrame& g) { pushOutput (g); });
+
+        // The wet signal and the dry gain go through identical converters, so they
+        // emit the same number of frames.
+        std::array<beads::FloatFrame, 8> wet;
+        std::array<float, 8> gain;
+        std::size_t numWet = 0, numGain = 0;
+        fromBeads->push (f, [&] (const beads::FloatFrame& g) { if (numWet < wet.size()) wet[numWet++] = g; });
+        gainFromBeads->push (beads::FloatFrame { beadsDryGain[i], 0.0f },
+                             [&] (const beads::FloatFrame& g) { if (numGain < gain.size()) gain[numGain++] = g.l; });
+        for (std::size_t k = 0; k < numWet; ++k)
+            pushOutput ({ wet[k], k < numGain ? gain[k] : 0.0f });
     }
 }
 
@@ -428,10 +459,13 @@ void RainEngine::process (float* left, float* right, int numSamples)
 
     const float bypassTarget = params.bypass ? 1.0f : 0.0f;
     const auto dryLag = static_cast<std::size_t> (std::clamp (latency, 0, static_cast<int> (kDryDelaySize) - 1));
+    // The dry signal joins the wet before the output limiter, so it lags by less.
+    const auto mixLag = static_cast<std::size_t> (std::clamp (latency - limiter.latency(), 0, static_cast<int> (kDryDelaySize) - 1));
     for (int i = 0; i < numSamples; ++i)
     {
         dryDelay[dryWrite] = { left[i], right[i] };
         const beads::FloatFrame dry = dryDelay[(dryWrite - dryLag) & (kDryDelaySize - 1)];
+        const beads::FloatFrame dryMix = dryDelay[(dryWrite - mixLag) & (kDryDelaySize - 1)];
         dryWrite = (dryWrite + 1) & (kDryDelaySize - 1);
 
         const beads::FloatFrame x { left[i] * kHeadroom, right[i] * kHeadroom };
@@ -446,15 +480,17 @@ void RainEngine::process (float* left, float* right, int numSamples)
             }
         });
 
-        beads::FloatFrame y { 0.0f, 0.0f };
+        OutFrame y {};
         if (fifoRead != fifoWrite)
         {
             y = fifo[fifoRead];
             fifoRead = (fifoRead + 1) & (kFifoSize - 1);
         }
         const float g = outputGain.next();
-        float l = subsonic.process (y.l, 0) * g;
-        float r = subsonic.process (y.r, 1) * g;
+        // Grains (and reverb) from Beads, plus the untouched dry input at the gain
+        // Beads would have given it.
+        float l = (subsonic.process (y.wet.l, 0) + y.dryGain * dryMix.l) * g;
+        float r = (subsonic.process (y.wet.r, 1) + y.dryGain * dryMix.r) * g;
         limiter.process (l, r);
         if (bypassMix != bypassTarget)
             bypassMix = bypassTarget > bypassMix ? std::min (bypassTarget, bypassMix + bypassStep)

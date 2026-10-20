@@ -49,7 +49,8 @@ class Limiter {
     max_peak_ = max_peak;
   }
 
-  void Process(FloatFrame* in_out, size_t size) {
+  // Rain: gain_out, when given, receives the gain applied to each frame.
+  void Process(FloatFrame* in_out, size_t size, float* gain_out = NULL) {
     while (size--) {
       const float peak = std::min(
           std::max(fabsf(in_out->l), fabsf(in_out->r)),
@@ -60,6 +61,9 @@ class Limiter {
       in_out->l *= gain;
       in_out->r *= gain;
       ++in_out;
+      if (gain_out) {
+        *gain_out++ = gain;
+      }
     }
   }
 

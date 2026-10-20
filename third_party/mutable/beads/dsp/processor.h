@@ -50,6 +50,13 @@ namespace beads {
 // (512 + 256) * 1000 bytes, 48kHz 16-bit stereo = 4 seconds
 const size_t kDelayBufferSizeBits = 768 * 1000 * 8;
 
+// Rain: Studio quality, 8 seconds of 48 kHz 32-bit float stereo in three banks of
+// 1 MB (supplied by Rain; the module's own 768 kB is not big enough).
+const int kStudioDelayFrames = 48000 * 8;
+const size_t kStudioBankSize = 1048576;
+const size_t kStudioBufferSize = 3 * kStudioBankSize;
+const size_t kStudioReverbSize = 32768;
+
 class Processor {
  public:
   Processor() { }
@@ -59,7 +66,8 @@ class Processor {
     MEDIA_DIRTY_TAPE,
     MEDIA_CLEAN_TAPE,
     MEDIA_VINTAGE_DIGITAL,
-    MEDIA_DIGITAL
+    MEDIA_DIGITAL,
+    MEDIA_STUDIO  // Rain: 48 kHz, 32-bit float buffer and reverb
   };
   
   struct MixParameters {
@@ -69,9 +77,16 @@ class Processor {
     bool output_gate;
     // Rain: 0 to 1, darkens and warms the grains (not the dry signal).
     float soften = 0.0f;
+    // Rain: when set, the dry signal is left out of the output (it still feeds
+    // the reverb) and the gain it would have had is written here for every
+    // sample, so the host can mix its own untouched copy of the input.
+    float* direct_gain = NULL;
   };
   
-  void Init(uint8_t* buffers[], uint16_t* reverb_buffer);
+  // Rain: studio_buffers (three banks of kStudioBankSize bytes) and
+  // studio_reverb_buffer (kStudioReverbSize floats) enable MEDIA_STUDIO.
+  void Init(uint8_t* buffers[], uint16_t* reverb_buffer,
+            uint8_t* studio_buffers[] = NULL, float* studio_reverb_buffer = NULL);
   void Configure(Media media, bool mono);
   
   inline Media media() const { return media_; }
@@ -79,18 +94,18 @@ class Processor {
   
   inline float sample_rate() const {
 #ifdef ENABLE_HARDWARE_24K
-    float sr[4] = { 24000.0f, 48000.0f, 32000.0f, 48000.0f };
+    float sr[5] = { 24000.0f, 48000.0f, 32000.0f, 48000.0f, 48000.0f };
 #else
-    float sr[4] = { 48000.0f, 48000.0f, 32000.0f, 48000.0f };
+    float sr[5] = { 48000.0f, 48000.0f, 32000.0f, 48000.0f, 48000.0f };
 #endif  // ENABLE_HARDWARE_24K
     return sr[media_];
   }
   
   inline int ratio() const {
 #ifdef ENABLE_HARDWARE_24K
-    int ratio[4] = { 1, 2, 1, 1 };
+    int ratio[5] = { 1, 2, 1, 1, 1 };
 #else
-    int ratio[4] = { 2, 2, 1, 1 };
+    int ratio[5] = { 2, 2, 1, 1, 1 };
 #endif  // ENABLE_HARDWARE_24K
     return ratio[media_];
   }
@@ -109,6 +124,8 @@ class Processor {
         return processor_clean_tape_.mutable_delay_write_ptr(mono_);
       case MEDIA_VINTAGE_DIGITAL:
         return processor_vintage_digital_.mutable_delay_write_ptr(mono_);
+      case MEDIA_STUDIO:
+        return processor_studio_.mutable_delay_write_ptr(mono_);
       case MEDIA_DIGITAL:
       default:
         return processor_digital_.mutable_delay_write_ptr(mono_);
@@ -129,6 +146,8 @@ class Processor {
         return processor_clean_tape_.remaining(mono_);
       case MEDIA_VINTAGE_DIGITAL:
         return processor_vintage_digital_.remaining(mono_);
+      case MEDIA_STUDIO:
+        return processor_studio_.remaining(mono_);
       case MEDIA_DIGITAL:
       default:
         return processor_digital_.remaining(mono_);
@@ -136,6 +155,10 @@ class Processor {
   }
 
   inline void Trim() {
+    if (media_ == MEDIA_STUDIO) {
+      processor_studio_.Trim(mono_);
+      return;
+    }
     switch (media_) {
       case MEDIA_DIRTY_TAPE:
         processor_dirty_tape_.Trim(mono_);
@@ -189,6 +212,15 @@ class Processor {
       kDelayBufferSizeBits / (8 * 2),
       2> processor_dirty_tape_;
 #endif  // ENABLE_HARDWARE_24K
+
+  // Rain: Studio quality.
+  GranularProcessor<
+      RESOLUTION_FLOAT,
+      kStudioDelayFrames,
+      1,
+      kStudioBankSize> processor_studio_;
+  ReverbT<FORMAT_32_BIT> reverb_studio_;
+  bool has_studio_ = false;
 
   TriggerGenerator trigger_generator_;
   DelayController delay_controller_;

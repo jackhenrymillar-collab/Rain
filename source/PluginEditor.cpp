@@ -25,11 +25,14 @@ namespace
 
     // Tooltips for the quality chips (matches qualityNames() and dsp::Quality).
     constexpr const char* kQualityTips[] = {
-        "Crisp and clean. 48 kHz, 16-bit, 4 s buffer, bright reverb.",
+        "Crisp and clean, like the module. 48 kHz, 16-bit, 4 s buffer, bright reverb.",
         "Early sampler grit. 32 kHz, 12-bit, 8 s buffer, a little darker.",
         "Soft saturation and a warm, rounded top end. 10 s buffer.",
         "Hiss, wow and flutter, and a worn 8-bit buffer. 16 s.",
+        "The cleanest. 32-bit float buffer and reverb, 8 s, no noise floor even with heavy feedback.",
     };
+    // Panel order of the quality chips, cleanest to dirtiest, as parameter indices.
+    constexpr int kQualityOrder[] = { 4, 0, 1, 2, 3 };
 
     constexpr float kColumnStep = 135.25f; // eight knob columns across 1074 px
     constexpr int kColumnWidth = 127;
@@ -138,6 +141,7 @@ RainEditor::RainEditor (RainProcessor& p)
     // Overlap: SIZE sets how many grains overlap, and their length follows DENSITY.
     overlapButton.setTooltip ("SIZE sets how many grains overlap; their length follows DENSITY and the tempo, so the cloud stays smooth");
     content.addAndMakeVisible (overlapButton);
+    formantButton.setTooltip ("Pitched grains keep their tone colour, so voices don't go chipmunk or monster");
 
     // Motion.
     const char* modNames[] = { "WAVE", "DRIFT" };
@@ -190,15 +194,16 @@ RainEditor::RainEditor (RainProcessor& p)
     qualityLabel.setJustificationType (Justification::centredRight);
     content.addAndMakeVisible (qualityLabel);
     const auto names = qualityNames();
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 5; ++i)
     {
+        const int q = kQualityOrder[i];
         auto& chip = qualityChips[static_cast<size_t> (i)];
-        chip.setButtonText (names[i]);
+        chip.setButtonText (names[q]);
         chip.getProperties().set ("compact", true);
-        chip.setTooltip (kQualityTips[i]);
-        chip.onClick = [this, i] {
+        chip.setTooltip (kQualityTips[q]);
+        chip.onClick = [this, q] {
             if (qualityAttachment != nullptr)
-                qualityAttachment->setValueAsCompleteGesture (static_cast<float> (i));
+                qualityAttachment->setValueAsCompleteGesture (static_cast<float> (q));
         };
         content.addAndMakeVisible (chip);
     }
@@ -208,13 +213,14 @@ RainEditor::RainEditor (RainProcessor& p)
     const std::pair<TextButton*, const char*> toggles[] = {
         { &freezeButton, ParamID::freeze }, { &seedLockButton, ParamID::seedLock },
         { &autoGainButton, ParamID::autoGain }, { &syncButton, ParamID::sync }, { &overlapButton, ParamID::overlap },
+        { &formantButton, ParamID::formant },
     };
     for (const auto& [button, id] : toggles)
     {
         button->setClickingTogglesState (true);
         buttonAttachments.push_back (std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (state, id, *button));
     }
-    for (auto* b : { &freezeButton, &seedButton, &seedLockButton, &autoGainButton, &syncButton, &overlapButton })
+    for (auto* b : { &freezeButton, &seedButton, &seedLockButton, &autoGainButton, &syncButton, &overlapButton, &formantButton })
     {
         b->getProperties().set ("pill", true);
         content.addAndMakeVisible (*b);
@@ -274,22 +280,23 @@ void RainEditor::showMode (int index)
     modeTitle.setText (kModes[index].title, dontSendNotification);
     modeDescription.setText (kModes[index].description, dontSendNotification);
 
-    // SIZE, REVERSE and OVERLAP do nothing in delay mode.
+    // SIZE, REVERSE, OVERLAP and FORMANT do nothing in delay mode.
     const bool delay = index == 1;
     knobs[1]->setAlpha (delay ? 0.4f : 1.0f);
     smallKnobs[1]->setAlpha (delay ? 0.4f : 1.0f);
     characterKnobs[0]->setAlpha (delay ? 0.4f : 1.0f);
     characterKnobs[2]->setAlpha (delay ? 0.4f : 1.0f);
     overlapButton.setAlpha (delay ? 0.4f : 1.0f);
+    formantButton.setAlpha (delay ? 0.4f : 1.0f);
     knobs[1]->getSlider().setTooltip (delay ? "SIZE has no effect in Delay mode" : String());
     knobs[0]->getSlider().setTooltip (delay ? "In Delay mode, TIME picks which slice loops while FROZEN" : String());
 }
 
 void RainEditor::showQuality (int index)
 {
-    index = jlimit (0, 3, index);
-    for (int i = 0; i < 4; ++i)
-        qualityChips[static_cast<size_t> (i)].setToggleState (i == index, dontSendNotification);
+    index = jlimit (0, 4, index);
+    for (int i = 0; i < 5; ++i)
+        qualityChips[static_cast<size_t> (i)].setToggleState (kQualityOrder[i] == index, dontSendNotification);
 }
 
 void RainEditor::updateLiveValues()
@@ -381,7 +388,8 @@ void RainEditor::layoutContent()
     modeDescription.setBounds (kLeft, 210, 530, 28);
     for (int i = 0; i < 2; ++i)
         modeChips[static_cast<size_t> (i)].setBounds (kLeft + i * 142, 252, 130, 44);
-    overlapButton.setBounds (kLeft + 2 * 142 + 18, 255, 140, 38);
+    overlapButton.setBounds (kLeft + 2 * 142 + 18, 255, 128, 38);
+    formantButton.setBounds (kLeft + 2 * 142 + 18 + 138, 255, 128, 38);
     grainDisplay.setBounds (635, 141, 447, 150); // 85% of the original 526 x 176, same centre
 
     // Knob rows.
@@ -421,9 +429,9 @@ void RainEditor::layoutContent()
     freezeButton.setBounds (kLeft, 772, 150, 46);
     seedButton.setBounds (kLeft + 162, 772, 120, 46);
     seedLockButton.setBounds (kLeft + 294, 772, 172, 46);
-    qualityLabel.setBounds (600, 772, 116, 46);
-    for (int i = 0; i < 4; ++i)
-        qualityChips[static_cast<size_t> (i)].setBounds (728 + i * 98, 774, 94, 42);
+    qualityLabel.setBounds (556, 772, 116, 46);
+    for (int i = 0; i < 5; ++i)
+        qualityChips[static_cast<size_t> (i)].setBounds (684 + i * 87, 774, 83, 42);
 }
 
 } // namespace rain

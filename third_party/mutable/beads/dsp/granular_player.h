@@ -57,6 +57,19 @@ struct Parameters {
   // Rain: 0 to 1, pulls each grain's pan towards a random position in the
   // stereo field. At 0 Beads spreads grains as upstream.
   float random_pan = 0.0f;
+  // Rain: grain quality options. All off by default, which is upstream Beads.
+  // clean_reader: read grains with a band-limited (windowed sinc) interpolator
+  //   instead of 4-point Hermite, so pitched grains don't alias.
+  // formant: pitch grains by repeating pitch-period slices of the source at the
+  //   new rate (PSOLA) instead of resampling, so the tone colour stays put.
+  // phase_align: nudge each new grain's start by up to 5 ms so its waveform lines
+  //   up with the grain playing before it, avoiding hollow, phasey overlaps.
+  // pitch_glide: seconds over which a new grain glides from the previous grain's
+  //   pitch to its own (0 = off).
+  bool clean_reader = false;
+  bool formant = false;
+  bool phase_align = false;
+  float pitch_glide = 0.0f;
 };
 
 template<typename T, int num_grains>

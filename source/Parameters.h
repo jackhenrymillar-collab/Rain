@@ -41,10 +41,11 @@ namespace ParamID
     inline constexpr auto reverse     = "reverse";
     inline constexpr auto soften      = "soften";
     inline constexpr auto randomPan   = "randompan";
+    inline constexpr auto formant     = "formant";
     inline constexpr auto bypass      = "bypass";
 }
 
-// In front-panel order. Must match dsp::Quality.
+// Must match dsp::Quality (Studio was added last; the panel shows it first).
 juce::StringArray qualityNames();
 juce::StringArray modeNames();      // dsp::Mode
 juce::StringArray syncRateNames();  // dsp::kSyncDivisionBeats

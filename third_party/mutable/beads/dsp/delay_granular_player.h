@@ -33,6 +33,7 @@
 #include "stmlib/utils/random.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "beads/dsp/delay_grain.h"
 #include "beads/dsp/granular_player.h"
@@ -65,14 +66,27 @@ class DelayGranularPlayer : public GranularPlayer<DelayGrain, 32> {
       const int safety = DelayGrain::head_crossing_safety_zone + 1;
       const int max_delay = delay_line->duration() - 2 * safety;
 
-      new_grain()->Start(
+      // Rain: grain quality options.
+      GrainOptions options;
+      options.clean_reader = p.clean_reader;
+      options.formant = p.formant;
+      options.phase_align = p.phase_align;
+      options.glide_coefficient = p.pitch_glide > 0.0f
+          ? 1.0f - std::exp(-1.0f / (p.pitch_glide * sample_rate_))
+          : 0.0f;
+      options.previous = previous_;
+
+      DelayGrain* grain = new_grain();
+      grain->Start(
           delay_line,
           p.time.value() * float(max_delay) + float(safety),
           (reverse ? -1.0f : 1.0f) * p.pitch.pitch_value(),
           ComputeGrainDuration(duration),
           p.shape.value(),
           amplitude, pan,
-          trigger.fractional_sample);
+          trigger.fractional_sample,
+          options);
+      previous_ = grain;
       SortGrainList(p.monophonic_mode);
     }
 
@@ -84,6 +98,8 @@ class DelayGranularPlayer : public GranularPlayer<DelayGrain, 32> {
   }
 
  private:
+  DelayGrain* previous_ = NULL;  // Rain: the most recently started grain
+
   DISALLOW_COPY_AND_ASSIGN(DelayGranularPlayer);
 };
 

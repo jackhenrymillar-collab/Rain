@@ -46,6 +46,7 @@ enum Resolution {
   RESOLUTION_8_BIT,
   RESOLUTION_12_BIT,
   RESOLUTION_16_BIT,
+  RESOLUTION_FLOAT,  // Rain: 32-bit float, for Rain's Studio quality
   RESOLUTION_LAST
 };
 
@@ -81,6 +82,38 @@ struct Item<RESOLUTION_16_BIT, 2> {
   enum { bundle_size = 1 };
   int16_t l;
   int16_t r;
+};
+
+// Rain: 32-bit float storage. No quantisation and no clipping.
+template<>
+struct Item<RESOLUTION_FLOAT, 1> {
+  void Store(int i, FloatFrame s) {
+    lr = (s.l + s.r) * 0.5f;
+  }
+  inline FloatFrame value(int i) const {
+    FloatFrame result;
+    result.l = result.r = lr;
+    return result;
+  }
+  enum { bundle_size = 1 };
+  float lr;
+};
+
+template<>
+struct Item<RESOLUTION_FLOAT, 2> {
+  void Store(int i, FloatFrame s) {
+    l = s.l;
+    r = s.r;
+  }
+  inline FloatFrame value(int i) const {
+    FloatFrame result;
+    result.l = l;
+    result.r = r;
+    return result;
+  }
+  enum { bundle_size = 1 };
+  float l;
+  float r;
 };
 
 template<>
@@ -359,6 +392,52 @@ class DelayLine {
     return value;
   }
   
+  // Rain: band-limited read (windowed sinc from a polyphase table, see
+  // rain_sinc.h). Same position convention as the Hermite read: the value at
+  // delay_integral + delay_fractional samples back.
+  inline FloatFrame ReadSinc(
+      int delay_integral,
+      float delay_fractional,
+      const float* table,
+      int taps,
+      int phases) const {
+    const int half = taps / 2;
+    int i = (write_ptr_ + delay_integral - (half - 1)) % max_delay;
+    if (i < 0) {
+      i += max_delay;
+    }
+    const float scaled = delay_fractional * float(phases);
+    int p = int(scaled);
+    if (p >= phases) {
+      p = phases - 1;
+    }
+    const float a = scaled - float(p);
+    const float* c0 = table + p * taps;
+    const float* c1 = c0 + taps;
+    FloatFrame sum;
+    sum.l = sum.r = 0.0f;
+    for (int m = 0; m < taps; ++m) {
+      const float c = c0[m] + a * (c1[m] - c0[m]);
+      const FloatFrame x = Load(i);
+      sum.l += c * x.l;
+      sum.r += c * x.r;
+      if (++i >= max_delay) {
+        i = 0;
+      }
+    }
+    return sum;
+  }
+
+  // Rain: one sample, mono, at a whole-sample delay (for pitch and phase analysis).
+  inline float ReadMono(int delay_integral) const {
+    int i = (write_ptr_ + delay_integral) % max_delay;
+    if (i < 0) {
+      i += max_delay;
+    }
+    const FloatFrame x = Load(i);
+    return 0.5f * (x.l + x.r);
+  }
+
   template<Interpolation interpolation>
   inline FloatFrame Read(float delay) const {
     MAKE_INTEGRAL_FRACTIONAL(delay)

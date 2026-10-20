@@ -49,6 +49,7 @@ reported to the host.
 | **Time** | 0 to 100% | Where in the buffer new grains start. Left is the most recent audio, right is the oldest. |
 | **Size** | 0 to 100% | Grain length, 8 ms to about 3 s. **Rain:** forward lengths only, since direction has its own control (Reverse); on the module the left third of SIZE plays every grain backwards. With **Overlap** on, Size sets how many grains overlap instead (1× to 8×). Not used in Delay mode. |
 | **Overlap** | on/off | **Rain:** grain length follows the grain rate (Density, and the tempo when synced), so a set number of grains always crossfade into each other and the cloud has no gaps. |
+| **Formant** | on/off | **Rain:** pitched grains keep their tone colour, so voices don't go chipmunk going up or monster going down. Each grain finds the pitch period of its source and lays down Hann-windowed slices two periods long, read at normal speed, at the new period (PSOLA). Noisy material, where no pitch is found, is resampled as usual. Not used in Delay mode. |
 | **Reverse** | 0 to 100% | **Rain** (Grain Character): the chance each grain plays backwards. 50% mixes swells and forward grains; 100% is fully backwards. Not used in Delay mode. |
 | **Random Pan** | 0 to 100% | **Rain** (Grain Character): pulls each grain towards a random point in the stereo field. At 0 grains spread as on the module (wider with more randomness and more overlapping grains); at 100% each lands anywhere from hard left to hard right. |
 | **Shape** | 0 to 100% | Grain envelope: square at the left, a sharp attack with a decay at 1/3, a smooth bell around 2/3, and reversed (slow swell, sharp end) at the right. On the panel, the moon's glow blooms, becoming a wide halo ring near the top of the range. |
@@ -61,7 +62,7 @@ reported to the host.
 | --- | --- | --- |
 | **Density** | 0 to 100% | Centre (48 to 52%) is off. Left of centre, grains fire at regular intervals, faster as you turn left. Right of centre, they fire at random, denser as you turn right. Up to about 130 grains per second. On the panel, the rain falls harder and more stars come out the further Density is from noon. |
 | **Feedback** | 0 to 100% | How much of the grain output is recorded back into the buffer. Soft-limited, so it can run hot. On the panel, it brings forked lightning (rare at first, about one strike every 3 to 4 s at full) that leaves an afterglow, and makes the stars brighter. |
-| **Dry/Wet** | 0 to 100% | Beads' crossfade law (dry 0.75×, wet 1.5× at the extremes). |
+| **Dry/Wet** | 0 to 100% | Beads' crossfade law (dry 0.75×, wet 1.5× at the extremes). **Rain:** the dry signal is mixed outside Beads at the host rate, so it is never resampled, quantised or band-limited, in any quality. Beads reports the gain it would have given the dry signal (including its limiters), and still feeds the dry signal to Cloud. |
 | **Cloud** | 0 to 100% | Beads' reverb (Rain calls it Cloud): amount and decay together. It sits after the dry/wet mix, so it also works on the dry signal. On the panel, it takes the sky much darker, with vast nebulae, many more stars and aurora low down; the mist clears, the rain fades a little and the moon wanes to a crescent whose dark side shows its craters. |
 | **Soften** | 0 to 100% | **Rain** (Grain Character): darkens and warms the grains only: light saturation, then a 12 dB/octave low-pass from 16 kHz down to about 2.5 kHz. Default 25%. |
 
@@ -125,6 +126,18 @@ Input and Auto alone. Hosts also see the factory presets as programs.
 | Vintage | MEDIA_VINTAGE_DIGITAL | 32 kHz, 12-bit | 8 s | Early-sampler grit, darker reverb |
 | Clean Tape | MEDIA_CLEAN_TAPE | 24 kHz inside, 12-bit | about 10 s | Soft saturation that rises with input gain |
 | Dirty Tape | MEDIA_DIRTY_TAPE | 24 kHz, 8-bit μ-law | about 16 s | Hiss, wow and flutter, always soft clipped |
+| Studio | **Rain:** MEDIA_STUDIO | 48 kHz, 32-bit float | 8 s | The cleanest: no noise floor or clipping in the buffer or the reverb, even with heavy feedback |
+
+The panel shows Studio first (cleanest to dirtiest); the parameter keeps it last so
+saved sessions keep their quality.
+
+**Grain reading (Rain).** In Digital and Studio, grains are read with a band-limited
+interpolator (Kaiser-windowed sinc, with the cut-off lowered in quarter-octave steps
+as grains speed up), so grains pitched up two octaves don't alias. New grains also
+start up to 5 ms early or late so their waveform lines up with the grain before (and
+are turned down a little, since in-phase grains add up louder), and a grain whose
+pitch differs from the one before glides to it over about 12 ms. Vintage and the two
+tapes keep the module's 4-point Hermite reader as part of their character.
 
 ## Levels (Rain)
 

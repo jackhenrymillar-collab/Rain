@@ -43,7 +43,9 @@ using namespace stmlib;
 
 void Processor::Init(
     uint8_t* buffers[],
-    uint16_t* reverb_buffer) {
+    uint16_t* reverb_buffer,
+    uint8_t* studio_buffers[],
+    float* studio_reverb_buffer) {
   processor_digital_.Init(48000.0f, buffers);
   processor_vintage_digital_.Init(32000.0f, buffers);
   processor_clean_tape_.Init(24000.0f, buffers);
@@ -53,6 +55,11 @@ void Processor::Init(
   wet_ = 0.0f;
   
   reverb_.Init(reverb_buffer, 48000.0f);
+  has_studio_ = studio_buffers && studio_reverb_buffer;
+  if (has_studio_) {
+    processor_studio_.Init(48000.0f, studio_buffers);
+    reverb_studio_.Init(studio_reverb_buffer, 48000.0f);
+  }
 #ifdef ENABLE_HARDWARE_24K
   wow_and_flutter_.Init(24000.0f);
   wow_and_flutter_.set_lp(0.95f);
@@ -68,6 +75,9 @@ void Processor::Init(
 }
 
 void Processor::Configure(Media media, bool mono) {
+  if (media == MEDIA_STUDIO && !has_studio_) {
+    media = MEDIA_DIGITAL;
+  }
   media_ = media;
   mono_ = mono;
   
@@ -90,6 +100,10 @@ void Processor::Configure(Media media, bool mono) {
       processor_dirty_tape_.Reset();
       max_delay = processor_dirty_tape_.max_delay_times_ratio();
       break;
+    case MEDIA_STUDIO:
+      processor_studio_.Reset();
+      max_delay = processor_studio_.max_delay_times_ratio();
+      break;
   }
   
   float sr = sample_rate();
@@ -98,6 +112,9 @@ void Processor::Configure(Media media, bool mono) {
   trigger_generator_.Init(sr);
   delay_controller_.Init(sr, max_delay * (mono ? 2 : 1));
   reverb_.Reset(sr);
+  if (has_studio_) {
+    reverb_studio_.Reset(sr);
+  }
   std::fill(&soften_state_[0][0], &soften_state_[0][0] + 4, 0.0f);
 }
 
@@ -202,6 +219,12 @@ void Processor::Process(
           triggers, taps, freeze, parameters, feedback, mono_, in, out, size);
       copy(&in[0], &in[size], &dry_signal[0]);
       break;
+
+    case MEDIA_STUDIO:
+      processor_studio_.Process(
+          triggers, taps, freeze, parameters, feedback, mono_, in, out, size);
+      copy(&in[0], &in[size], &dry_signal[0]);
+      break;
     
     case MEDIA_VINTAGE_DIGITAL:
       processor_vintage_digital_.Process(
@@ -251,33 +274,76 @@ void Processor::Process(
   stmlib::ParameterInterpolator dry_modulation(&dry_, dry, size);
   stmlib::ParameterInterpolator wet_modulation(&wet_, wet, size);
 
-  for (size_t i = 0; i < size; ++i) {
-    out[i] = dry_modulation.Next() * dry_signal[i] + \
-        wet_modulation.Next() * out[i];
+  // Rain: with an external dry path, `direct` carries the grains alone (what
+  // reaches the output without reverb), while `out` still carries the full mix
+  // that feeds the reverb.
+  float* direct_gain = mix_parameters.direct_gain;
+  FloatFrame direct[size];
+  float dry_gain[size];
+  float pre_gain[size];
+
+  if (direct_gain) {
+    for (size_t i = 0; i < size; ++i) {
+      dry_gain[i] = dry_modulation.Next();
+      direct[i] = wet_modulation.Next() * out[i];
+    }
+    if (media_ == MEDIA_DIRTY_TAPE) {
+      wow_and_flutter_.Process(direct, size);
+    }
+    for (size_t i = 0; i < size; ++i) {
+      out[i] = dry_gain[i] * dry_signal[i] + direct[i];
+    }
+    pre_reverb_limiter_.Process(out, size, pre_gain);
+    for (size_t i = 0; i < size; ++i) {
+      direct[i] = pre_gain[i] * direct[i];
+    }
+  } else {
+    for (size_t i = 0; i < size; ++i) {
+      out[i] = dry_modulation.Next() * dry_signal[i] + \
+          wet_modulation.Next() * out[i];
+    }
+    
+    // Wow and flutter simulation.
+    if (media_ == MEDIA_DIRTY_TAPE) {
+      wow_and_flutter_.Process(out, size);
+    }
+    
+    pre_reverb_limiter_.Process(out, size);
   }
-  
-  // Wow and flutter simulation.
-  if (media_ == MEDIA_DIRTY_TAPE) {
-    wow_and_flutter_.Process(out, size);
-  }
-  
-  pre_reverb_limiter_.Process(out, size);
   
   // Reverb.
-  const bool caveman = media_ != MEDIA_DIGITAL;
+  const bool caveman = media_ != MEDIA_DIGITAL && media_ != MEDIA_STUDIO;
   const float reverb = mix_parameters.reverb_amount;
   const float reverb_mix = reverb * reverb * 0.9f;
   const float reverb_time = reverb * reverb * reverb;
-  reverb_.set_mix(reverb_mix);
-  reverb_.set_time(caveman
+  const float reverb_t = caveman
       ? (0.45f + 0.5f * reverb_time)
-      : (0.3f + 0.6f * reverb_time));
-  reverb_.set_lp(
-      caveman ? 0.4f : (media_ == MEDIA_VINTAGE_DIGITAL ? 0.75f : 0.6f));
-  reverb_.Process(out, size);
+      : (0.3f + 0.6f * reverb_time);
+  const float reverb_lp =
+      caveman ? 0.4f : (media_ == MEDIA_VINTAGE_DIGITAL ? 0.75f : 0.6f);
+  float reverb_direct[size];
+  if (media_ == MEDIA_STUDIO) {
+    reverb_studio_.set_mix(reverb_mix);
+    reverb_studio_.set_time(reverb_t);
+    reverb_studio_.set_lp(reverb_lp);
+    reverb_studio_.Process(out, size, direct_gain ? direct : NULL,
+                           direct_gain ? reverb_direct : NULL);
+  } else {
+    reverb_.set_mix(reverb_mix);
+    reverb_.set_time(reverb_t);
+    reverb_.set_lp(reverb_lp);
+    reverb_.Process(out, size, direct_gain ? direct : NULL,
+                    direct_gain ? reverb_direct : NULL);
+  }
   
   // Final clipping/limiting
-  output_limiter_.Process(out, size);
+  float post_gain[size];
+  output_limiter_.Process(out, size, direct_gain ? post_gain : NULL);
+  if (direct_gain) {
+    for (size_t i = 0; i < size; ++i) {
+      direct_gain[i] = post_gain[i] * reverb_direct[i] * pre_gain[i] * dry_gain[i];
+    }
+  }
   
   if (mix_parameters.output_gate) {
     for (size_t i = 0; i < size; ++i) {

@@ -11,7 +11,7 @@ using namespace rain::test;
 
 namespace
 {
-    constexpr Quality kAllQualities[] = { Quality::digital, Quality::vintage, Quality::cleanTape, Quality::dirtyTape };
+    constexpr Quality kAllQualities[] = { Quality::digital, Quality::vintage, Quality::cleanTape, Quality::dirtyTape, Quality::studio };
 
     std::vector<float> noise (std::size_t n, unsigned seed, float amp = 0.5f)
     {
@@ -168,7 +168,8 @@ TEST_CASE ("No blow-ups under random automation, in every quality and at several
                 p.shapeRandom = 2.0f * u (rng) - 1.0f; p.pitchRandom = 2.0f * u (rng) - 1.0f;
                 p.feedback = u (rng); p.dryWet = u (rng); p.reverb = u (rng);
                 p.freeze = u (rng) > 0.8f; p.seed = u (rng) > 0.5f;
-                p.quality = kAllQualities[static_cast<int> (u (rng) * 3.999f)];
+                p.quality = kAllQualities[static_cast<int> (u (rng) * 4.999f)];
+                p.formant = u (rng) > 0.5f;
                 p.autoGain = u (rng) > 0.5f; p.inputGainDb = 32.0f * u (rng);
                 p.outputGainDb = 12.0f;
                 e.setParams (p);

@@ -58,6 +58,7 @@ private:
     std::vector<std::unique_ptr<ui::OrbKnob>> knobs, smallKnobs, characterKnobs;
     juce::TextButton autoGainButton { "AUTO" };
     juce::TextButton overlapButton { "OVERLAP" };
+    juce::TextButton formantButton { "FORMANT" };
 
     // Motion: two modulators.
     struct ModRow
@@ -77,7 +78,7 @@ private:
     // Footer.
     juce::TextButton freezeButton { "FREEZE" }, seedButton { "SEED" }, seedLockButton { "SEED LOCK" };
     juce::Label qualityLabel;
-    std::array<juce::TextButton, 4> qualityChips;
+    std::array<juce::TextButton, 5> qualityChips;
     std::unique_ptr<juce::ParameterAttachment> qualityAttachment;
 
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>> buttonAttachments;

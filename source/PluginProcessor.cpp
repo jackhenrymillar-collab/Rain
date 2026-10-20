@@ -37,6 +37,7 @@ RainProcessor::RainProcessor()
     reverse     = state.getRawParameterValue (ParamID::reverse);
     soften      = state.getRawParameterValue (ParamID::soften);
     randomPan   = state.getRawParameterValue (ParamID::randomPan);
+    formant     = state.getRawParameterValue (ParamID::formant);
     bypass      = state.getRawParameterValue (ParamID::bypass);
     modRate     = { state.getRawParameterValue (ParamID::mod1Rate), state.getRawParameterValue (ParamID::mod2Rate) };
     modDepth    = { state.getRawParameterValue (ParamID::mod1Depth), state.getRawParameterValue (ParamID::mod2Depth) };
@@ -92,7 +93,7 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.freeze = freeze->load() > 0.5f;
     p.seed = seed->load() > 0.5f;
     p.seedLock = seedLock->load() > 0.5f;
-    p.quality = static_cast<dsp::Quality> (juce::jlimit (0, 3, static_cast<int> (quality->load())));
+    p.quality = static_cast<dsp::Quality> (juce::jlimit (0, 4, static_cast<int> (quality->load())));
     p.autoGain = autoGain->load() > 0.5f;
     p.inputGainDb = inputGain->load();
     p.outputGainDb = outputGain->load();
@@ -104,6 +105,7 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.reverse = reverse->load() * 0.01f;
     p.soften = soften->load() * 0.01f;
     p.randomPan = randomPan->load() * 0.01f;
+    p.formant = formant->load() > 0.5f;
     p.bypass = bypass->load() > 0.5f;
     for (std::size_t m = 0; m < 2; ++m)
     {

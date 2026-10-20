@@ -23,7 +23,8 @@ enum class Quality
     digital,   // 48 kHz, 16-bit, 4 s
     vintage,   // 32 kHz, 12-bit, 8 s
     cleanTape, // 24 kHz internal, 12-bit, ~10 s, soft saturation
-    dirtyTape  // 24 kHz, 8-bit mu-law, ~16 s, wow and flutter
+    dirtyTape, // 24 kHz, 8-bit mu-law, ~16 s, wow and flutter
+    studio     // Rain: 48 kHz, 32-bit float buffer and reverb, 8 s, cleanest grains
 };
 
 // Grains is Beads' granular mode; Delay is its delay mode, which the module reaches
@@ -86,6 +87,9 @@ struct RainParams
     float reverse = 0.0f; // chance each grain plays backwards, 0 to 1
     float soften = 0.0f;  // darkens and warms the grains, 0 to 1
     float randomPan = 0.0f; // 0 to 1: each grain lands at a random place in the stereo field
+    // Formant: pitched grains keep their tone colour (voices don't go chipmunk or
+    // monster), by repeating pitch-period slices instead of resampling.
+    bool formant = false;
 
     // Bypass: the output crossfades (20 ms) to the dry input, delayed by the reported
     // latency so it lines up. Rain keeps recording underneath, so it comes back warm.
@@ -120,6 +124,8 @@ struct EngineMonitor
 };
 
 // Runs the Mutable Instruments Beads signal path (third_party/mutable) inside a plugin.
+// The dry signal is mixed here at the host rate, untouched (Beads still feeds it to
+// its reverb), so only the grains go through Beads' rate conversion and storage.
 // Beads runs at fixed rates (24, 32 or 48 kHz depending on quality), so audio is
 // converted from the host rate into Beads' rate and back again, in Beads' own small
 // blocks (sample rate / 4000 frames, as on the module). This adds a few samples of
@@ -172,7 +178,12 @@ public:
 private:
     void configure (Quality q);
     void runBeadsBlock();
-    void pushOutput (const beads::FloatFrame& f);
+    struct OutFrame
+    {
+        beads::FloatFrame wet; // Beads' output without the dry signal
+        float dryGain;         // gain Beads gives the dry signal at this moment
+    };
+    void pushOutput (const OutFrame& f);
 
     static constexpr int kMaxBeadsBlock = 16;
     static constexpr std::size_t kFifoSize = 8192; // power of two
@@ -186,15 +197,20 @@ private:
     std::unique_ptr<beads::Processor> processor;
     std::vector<std::uint8_t> block1, block2;
     std::vector<std::uint16_t> reverbBuffer;
+    std::vector<std::uint8_t> studioBuffer; // Studio quality: three 1 MB banks
+    std::vector<float> studioReverb;
 
     InputGain inputGain;
 
     // One converter pair per Beads rate (24, 32 and 48 kHz), built in prepare() so
     // switching quality on the audio thread never allocates.
     static constexpr int kNumRates = 3;
-    std::array<Resampler, kNumRates> toBeadsAt, fromBeadsAt;
+    // gainFromBeadsAt carries the dry signal's gain alongside the wet signal, so the
+    // two stay aligned sample for sample.
+    std::array<Resampler, kNumRates> toBeadsAt, fromBeadsAt, gainFromBeadsAt;
     Resampler* toBeads = nullptr;
     Resampler* fromBeads = nullptr;
+    Resampler* gainFromBeads = nullptr;
 
     SubsonicFilter subsonic;
     Limiter limiter;
@@ -204,9 +220,10 @@ private:
     bool smoothedValid = false;
 
     std::array<beads::FloatFrame, kMaxBeadsBlock> beadsIn {}, beadsOut {};
+    std::array<float, kMaxBeadsBlock> beadsDryGain {};
     int beadsFill = 0;
 
-    std::vector<beads::FloatFrame> fifo;
+    std::vector<OutFrame> fifo;
     std::size_t fifoRead = 0, fifoWrite = 0;
 
     // Rain's additions.

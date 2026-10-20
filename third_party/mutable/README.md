@@ -22,6 +22,20 @@ The files are unchanged from upstream, except that:
   which pulls each grain's pan towards a random position.
 - `beads/dsp/processor.h/.cc` add `MixParameters::soften` (default 0, no effect): a
   light saturation and 12 dB/octave low-pass on the grains before the dry/wet mix.
+- Sound quality additions, all off by default (upstream behaviour):
+  - `processor.h/.cc`: `MixParameters::direct_gain` leaves the dry signal out of the
+    output (it still feeds the reverb) and reports its gain per sample, so Rain can mix
+    its own untouched copy; `MEDIA_STUDIO`, a 48 kHz, 32-bit float buffer (8 s, in
+    buffers Rain supplies) with a 32-bit float reverb.
+  - `fx/reverb.h` is templated on its storage format (`Reverb` is the upstream 16-bit
+    one) and can take the direct part of its output from a separate buffer.
+    `limiter.h` can report its gain per sample.
+  - `delay_line.h` adds `RESOLUTION_FLOAT`, a band-limited `ReadSinc` and `ReadMono`;
+    `granular_processor.h` takes the bank size as a template argument.
+  - `granular_player.h` (`Parameters`), `delay_granular_player.h` and
+    `delay_grain.h` add the grain options `clean_reader` (band-limited reading),
+    `formant` (PSOLA pitch shifting), `phase_align` and `pitch_glide`.
+  - `rain_sinc.h` is new (Rain's own): the band-limited interpolation tables.
 
 ## License
 

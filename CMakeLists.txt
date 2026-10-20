@@ -147,7 +147,8 @@ if(RAIN_BUILD_TESTS)
     add_executable(rain_tests
         tests/DspTests.cpp
         tests/EngineTests.cpp
-        tests/MotionTests.cpp)
+        tests/MotionTests.cpp
+        tests/QualityTests.cpp)
     target_link_libraries(rain_tests PRIVATE rain_dsp Catch2::Catch2WithMain)
 
     enable_testing()
