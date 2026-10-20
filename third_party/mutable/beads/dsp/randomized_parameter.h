@@ -92,6 +92,11 @@ struct RandomizedParameter {
   float attenuverter;
   float cv;
   bool has_cv;
+  // Rain: correlated randomness. Each grain's random value is a slowly moving
+  // value, drift (-1 to +1, supplied by the host), plus a per-grain part whose
+  // share is jitter. jitter = 1 is the module: a fresh random value every grain.
+  float drift = 0.0f;
+  float jitter = 1.0f;
   
   inline float randomness_amount() const {
     if (has_cv) {
@@ -120,8 +125,9 @@ struct RandomizedParameter {
               attenuverter * stmlib::Random::GetFloat() * -3.0f);
         
         const float random_value = !clamp
-            ? CenteredUniform() * range
-            : stmlib::Random::GetFloat() * range - result;
+            ? ((1.0f - jitter) * drift + jitter * CenteredUniform()) * range
+            : ((1.0f - jitter) * (0.5f + 0.5f * drift)
+               + jitter * stmlib::Random::GetFloat()) * range - result;
         result += random_value * blend;
       }
     } else {

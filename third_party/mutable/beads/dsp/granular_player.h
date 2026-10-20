@@ -29,6 +29,8 @@
 #ifndef BEADS_DSP_GRANULAR_PLAYER_H_
 #define BEADS_DSP_GRANULAR_PLAYER_H_
 
+#include <algorithm>
+
 #include "stmlib/stmlib.h"
 #include "stmlib/utils/random.h"
 
@@ -149,7 +151,21 @@ class GranularPlayer {
     }
   }
   
-  inline T* new_grain() { return grain_priority_list_[0]; }
+  // Rain: the voice to start next. The first in the priority list was told to fade
+  // out when the last grain started, but if grains now come sooner than expected it
+  // may still be sounding; a voice that has already finished is used instead when
+  // there is one, so nothing is cut off mid-fade.
+  inline T* new_grain() {
+    if (!grain_priority_list_[0]->done()) {
+      for (int i = 1; i < num_grains; ++i) {
+        if (grain_priority_list_[i]->done()) {
+          std::swap(grain_priority_list_[0], grain_priority_list_[i]);
+          break;
+        }
+      }
+    }
+    return grain_priority_list_[0];
+  }
   
   inline void Tick() {
     ++grain_interval_;

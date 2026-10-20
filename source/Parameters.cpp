@@ -11,11 +11,6 @@ juce::StringArray qualityNames()
     return { "Digital", "Vintage", "Clean Tape", "Dirty Tape", "Studio" };
 }
 
-juce::StringArray modeNames()
-{
-    return { "Grains", "Delay" };
-}
-
 juce::StringArray syncRateNames()
 {
     juce::StringArray names;
@@ -115,7 +110,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     }
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::outputGain, v }, "Output Gain", Range { -24.0f, 12.0f, 0.1f }, 2.5f, withLabel ("dB", 1)));
 
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::mode, v }, "Mode", modeNames(), 0));
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::sync, v }, "Tempo Sync", false));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::syncRate, v }, "Sync Rate", syncRateNames(), 2));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::scale, v }, "Scale", scaleNames(), 0));

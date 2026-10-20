@@ -179,6 +179,11 @@ class ReverbT {
     }
   }
   
+  // Rain: the direct level the reverb is currently passing (it glides towards its
+  // target), so a quality change can hand it on and the dry signal doesn't dip.
+  inline float dry_level() const { return dry_; }
+  inline void set_dry_level(float dry) { dry_ = dry; }
+
   inline void set_mix(float mix) {
     mix_ = mix;
   }

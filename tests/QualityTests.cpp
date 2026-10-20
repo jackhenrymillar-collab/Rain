@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <limits>
 #include <random>
 
 using namespace rain::dsp;
@@ -205,6 +206,80 @@ TEST_CASE ("Formant keep holds the tone colour when grains are pitched")
     CHECK (lowOn > 2.0 * highOn);   // formant keep leaves it where it was
 }
 
+TEST_CASE ("Formant keep stays in tune and smooth on a sung note with vibrato")
+{
+    // A 196 Hz pulse train with vibrato through two formants, pitched a fifth up. The
+    // slices must follow the source's pulses: if they drift off them, the output loses
+    // its steady pitch and turns rough. Measured as how well each 40 ms stretch repeats
+    // at the new pitch period (1 = perfectly periodic).
+    constexpr double fs = 48000.0;
+    std::vector<float> v (static_cast<std::size_t> (fs * 5));
+    {
+        struct Res { double a1, a2, g, y1 = 0.0, y2 = 0.0; };
+        auto res = [] (double f, double bw, double g) {
+            const double r = std::exp (-kPi * bw / fs);
+            return Res { 2.0 * r * std::cos (2.0 * kPi * f / fs), -r * r, g };
+        };
+        Res rs[] = { res (700.0, 110.0, 1.0), res (1220.0, 120.0, 0.5) };
+        double phase = 0.0;
+        for (std::size_t i = 0; i < v.size(); ++i)
+        {
+            const double t = static_cast<double> (i) / fs;
+            phase += 196.0 * (1.0 + 0.008 * std::sin (2.0 * kPi * 5.2 * t)) / fs;
+            const double in = phase >= 1.0 ? 1.0 : 0.0;
+            if (phase >= 1.0)
+                phase -= 1.0;
+            double y = 0.0;
+            for (auto& r : rs)
+            {
+                const double o = in + r.a1 * r.y1 + r.a2 * r.y2;
+                r.y2 = r.y1;
+                r.y1 = o;
+                y += r.g * o;
+            }
+            v[i] = static_cast<float> (0.03 * y);
+        }
+    }
+    RainEngine e;
+    RainParams p = grainsOnly();
+    p.pitchSemis = 7.0f;
+    p.size = 0.6f;
+    p.density = 0.75f;
+    p.time = 0.1f;
+    p.overlap = true;
+    p.formant = true;
+    p.quality = Quality::studio;
+    e.setParams (p);
+    e.prepare (fs, 512);
+    auto l = v, r = v;
+    run (e, l, r);
+
+    const double period = fs / (196.0 * std::pow (2.0, 7.0 / 12.0));
+    constexpr std::size_t kFrame = 1920;
+    double sum = 0.0;
+    int frames = 0;
+    for (auto i = static_cast<std::size_t> (fs * 1.5); i + kFrame + 2 * static_cast<std::size_t> (period) < l.size(); i += kFrame / 2)
+    {
+        double best = 0.0;
+        for (auto lag = static_cast<std::size_t> (period * 0.97); lag <= static_cast<std::size_t> (period * 1.03) + 1; ++lag)
+        {
+            double ab = 0.0, aa = 0.0, bb = 0.0;
+            for (std::size_t n = 0; n < kFrame; ++n)
+            {
+                ab += l[i + n] * l[i + n + lag];
+                aa += l[i + n] * l[i + n];
+                bb += l[i + n + lag] * l[i + n + lag];
+            }
+            best = std::max (best, ab / std::sqrt (aa * bb + 1e-12));
+        }
+        sum += best;
+        ++frames;
+    }
+    const double periodicity = sum / frames;
+    INFO ("periodicity " << periodicity);
+    CHECK (periodicity > 0.93);
+}
+
 TEST_CASE ("Phase-aligned grains add up instead of cancelling")
 {
     // Long, densely overlapping grains of a steady tone, read from random places. In
@@ -265,4 +340,184 @@ TEST_CASE ("Phase-aligned grains add up instead of cancelling")
     CHECK (alignedWaver < 0.5 * randomWaver);
     CHECK (alignedLevel > randomLevel);
     CHECK (alignedLevel < 1.5 * randomLevel); // louder, but not by much
+}
+
+TEST_CASE ("Frozen audio survives a change of quality")
+{
+    // Record a tone, freeze, then go silent and switch quality: the grains should keep
+    // playing the frozen tone, at the same pitch, in every quality.
+    for (auto from : { Quality::digital, Quality::studio, Quality::dirtyTape })
+    {
+        for (auto to : { Quality::digital, Quality::vintage, Quality::cleanTape, Quality::dirtyTape, Quality::studio })
+        {
+            if (from == to)
+                continue;
+            RainEngine e;
+            RainParams p = grainsOnly();
+            p.quality = from;
+            p.time = 0.1f;
+            e.setParams (p);
+            e.prepare (48000.0, 256);
+
+            auto l = sine (48000 * 2, 48000.0, 440.0, 0.3f), r = l;
+            run (e, l, r);
+
+            p.freeze = true;
+            e.setParams (p);
+            std::vector<float> sl (48000 / 2, 0.0f), sr = sl;
+            run (e, sl, sr);
+
+            p.quality = to;
+            e.setParams (p);
+            std::vector<float> ol (48000 * 2, 0.0f), orr = ol;
+            run (e, ol, orr);
+
+            const std::size_t from0 = 48000 / 2, to0 = 48000 * 2;
+            const double level = rms (ol, from0, to0);
+            const double at440 = bandEnergy (ol, from0, to0, 48000.0, 425.0, 455.0);
+            // Where the tone would land if the buffer were read at the wrong rate.
+            double nearby = 0.0;
+            for (double wrong : { 220.0, 293.3, 660.0, 880.0 })
+                nearby += bandEnergy (ol, from0, to0, 48000.0, wrong - 15.0, wrong + 15.0);
+            INFO ("from " << static_cast<int> (from) << " to " << static_cast<int> (to) << ": level " << level
+                  << ", 440 Hz " << at440 << ", at wrong pitches " << nearby);
+            CHECK (level > 0.02);
+            CHECK (at440 > 20.0 * nearby);
+        }
+    }
+}
+
+TEST_CASE ("Frozen audio survives a host reset and a re-prepare")
+{
+    for (int howToInterrupt = 0; howToInterrupt < 2; ++howToInterrupt)
+    {
+        RainEngine e;
+        RainParams p = grainsOnly();
+        p.time = 0.1f;
+        e.setParams (p);
+        e.prepare (48000.0, 256);
+        auto l = sine (48000 * 2, 48000.0, 440.0, 0.3f), r = l;
+        run (e, l, r);
+        p.freeze = true;
+        e.setParams (p);
+
+        if (howToInterrupt == 0)
+            e.reset();                  // e.g. transport stop in Logic
+        else
+            e.prepare (48000.0, 1024);  // e.g. a new buffer size
+
+        std::vector<float> ol (48000 * 2, 0.0f), orr = ol;
+        run (e, ol, orr);
+        INFO ((howToInterrupt == 0 ? "reset" : "re-prepare"));
+        CHECK (rms (ol, 48000 / 2, 48000 * 2) > 0.02);
+    }
+}
+
+TEST_CASE ("The dry signal carries on through a change of quality")
+{
+    RainEngine e;
+    RainParams p;
+    p.dryWet = 0.0f;
+    p.reverb = 0.0f;
+    p.outputGainDb = 0.0f;
+    e.setParams (p);
+    e.prepare (48000.0, 64);
+    auto l = sine (48000, 48000.0, 200.0, 0.5f), r = l;
+    std::vector<float> out;
+    for (std::size_t i = 0; i < l.size(); i += 64)
+    {
+        if (i == 24000)
+        {
+            p.quality = Quality::cleanTape;
+            e.setParams (p);
+        }
+        e.process (l.data() + i, r.data() + i, 64);
+    }
+    // No gap: the tone never drops to silence for more than a sample or two (it only
+    // passes through zero as the sine crosses it).
+    int run0 = 0, longest = 0;
+    for (std::size_t i = 23000; i < 30000; ++i)
+    {
+        run0 = std::abs (l[i]) < 0.01f ? run0 + 1 : 0;
+        longest = std::max (longest, run0);
+    }
+    INFO ("longest near-silent stretch " << longest << " samples");
+    CHECK (longest < 10); // was 20 before the fix
+}
+
+TEST_CASE ("A NaN from the host does not silence Rain for good")
+{
+    RainEngine e;
+    RainParams p = grainsOnly();
+    e.setParams (p);
+    e.prepare (48000.0, 256);
+    auto l = sine (48000, 48000.0, 440.0, 0.3f), r = l;
+    l[1000] = r[1000] = std::numeric_limits<float>::quiet_NaN();
+    l[2000] = std::numeric_limits<float>::infinity();
+    run (e, l, r);
+    auto l2 = sine (48000 * 2, 48000.0, 440.0, 0.3f), r2 = l2;
+    run (e, l2, r2);
+    bool allFinite = true;
+    for (float v : l2) allFinite = allFinite && std::isfinite (v);
+    CHECK (allFinite);
+    CHECK (rms (l2, 48000, 48000 * 2) > 0.02);
+}
+
+TEST_CASE ("Latency is the same in every quality")
+{
+    for (double fs : { 44100.0, 48000.0, 96000.0 })
+    {
+        int first = -1;
+        for (auto q : { Quality::digital, Quality::vintage, Quality::cleanTape, Quality::dirtyTape, Quality::studio })
+        {
+            RainEngine e;
+            RainParams p;
+            p.quality = q;
+            e.setParams (p);
+            e.prepare (fs, 256);
+            if (first < 0)
+                first = e.latencySamples();
+            INFO ("rate " << fs << ", quality " << static_cast<int> (q));
+            CHECK (e.latencySamples() == first);
+        }
+    }
+}
+
+TEST_CASE ("Changing quality mid-sound doesn't click")
+{
+    // A steady tone through a half-wet patch; switch quality and look for a spike in
+    // the second difference (a click) compared with the settled sound.
+    for (auto [from, to] : { std::pair { Quality::digital, Quality::vintage }, { Quality::studio, Quality::dirtyTape },
+                             { Quality::cleanTape, Quality::studio } })
+    {
+        RainEngine e;
+        RainParams p;
+        p.density = 0.3f;
+        p.dryWet = 0.5f;
+        p.reverb = 0.2f;
+        p.quality = from;
+        e.setParams (p);
+        e.prepare (48000.0, 64);
+        const std::size_t n = 48000 * 3, change = 48000 * 2;
+        auto l = sine (n, 48000.0, 110.0, 0.3f), r = l;
+        for (std::size_t i = 0; i < n; i += 64)
+        {
+            if (i == change)
+            {
+                p.quality = to;
+                e.setParams (p);
+            }
+            e.process (l.data() + i, r.data() + i, 64);
+        }
+        auto spiky = [&] (std::size_t a, std::size_t b) {
+            double m = 0.0;
+            for (std::size_t i = a; i < b; ++i)
+                m = std::max (m, static_cast<double> (std::abs (l[i] - 2.0f * l[i - 1] + l[i - 2])));
+            return m / rms (l, a, b);
+        };
+        const double settled = std::max (spiky (change - 24000, change), spiky (change + 24000, n));
+        const double around = spiky (change, change + 4800);
+        INFO ("from " << static_cast<int> (from) << " to " << static_cast<int> (to) << ": " << around / settled);
+        CHECK (around < 1.5 * settled);
+    }
 }

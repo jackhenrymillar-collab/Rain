@@ -21,9 +21,14 @@ dry/wet → tape wow and flutter (Dirty Tape only) → limiter → reverb → li
 - **Look-ahead limiter.** Stereo-linked, 1.5 ms look-ahead, 80 ms release, ceiling
   -0.2 dBFS. It ramps the gain down ahead of a peak instead of clipping it, so loud
   grains and feedback don't crackle. Below the ceiling it does nothing.
-- **Knob smoothing.** Every knob glides like the module's pot readers (a one-pole
-  filter at the 4 kHz block rate, about 5 ms), so automation and preset changes don't
-  step.
+- **Seamless changes.** Grain controls (Time, Size, Shape, Pitch, Density, the
+  randoms) glide like the module's pot readers (about 5 ms) and only shape grains as
+  they start: a grain plays out with the length, position, envelope and pitch it
+  started with. Mix controls (Dry/Wet, Feedback, Cloud, Soften) change the sound
+  already playing, so they glide for about 20 ms; Output glides 20 ms in the gain
+  domain. Changing Quality fades the grains out over 8 ms, switches, and fades them
+  back in, while the dry signal carries straight on. Latency is the same in every
+  quality, so it never changes under the host.
 - **Grain attack.** The shortest grain attack is 1.5 ms (the module's is 0.5 ms),
   which stops square and very short grains popping on low notes.
 
@@ -35,26 +40,24 @@ at Beads' rate, audio passes straight through. Processing runs in the module's o
 blocks of rate ÷ 4000 frames. Latency is 1.5 to 6 ms depending on the rates, and is
 reported to the host.
 
-## Mode (Rain)
+## Grains only (Rain)
 
-| Mode | What it is |
-| --- | --- |
-| **Grains** | Beads' granular mode. |
-| **Delay** | Beads' delay mode, which the module reaches by turning SIZE fully clockwise. Density sets the delay time (longest at noon, shorter either side; right of noon adds a second tap), Feedback the repeats, Shape the envelope of the delay taps. While frozen, Time picks which slice of the buffer loops. Synced, Density picks a ratio of the clock. |
+Rain is purely granular. Beads' delay mode (SIZE fully clockwise on the module) is
+left out: Rain's SIZE stops just short of it.
 
 ## Grain controls
 
 | Control | Range | What it does |
 | --- | --- | --- |
 | **Time** | 0 to 100% | Where in the buffer new grains start. Left is the most recent audio, right is the oldest. |
-| **Size** | 0 to 100% | Grain length, 8 ms to about 3 s. **Rain:** forward lengths only, since direction has its own control (Reverse); on the module the left third of SIZE plays every grain backwards. With **Overlap** on, Size sets how many grains overlap instead (1× to 8×). Not used in Delay mode. |
-| **Overlap** | on/off | **Rain:** grain length follows the grain rate (Density, and the tempo when synced), so a set number of grains always crossfade into each other and the cloud has no gaps. |
-| **Formant** | on/off | **Rain:** pitched grains keep their tone colour, so voices don't go chipmunk going up or monster going down. Each grain finds the pitch period of its source and lays down Hann-windowed slices two periods long, read at normal speed, at the new period (PSOLA). Noisy material, where no pitch is found, is resampled as usual. Not used in Delay mode. |
-| **Reverse** | 0 to 100% | **Rain** (Grain Character): the chance each grain plays backwards. 50% mixes swells and forward grains; 100% is fully backwards. Not used in Delay mode. |
+| **Size** | 0 to 100% | Grain length, 8 ms to about 3 s. **Rain:** forward lengths only, since direction has its own control (Reverse); on the module the left third of SIZE plays every grain backwards. |
+| **Overlap** | on/off | **Rain:** fills the gaps. Grains keep the length Size sets; when Density makes them too sparse to overlap, they come more often (enough for two at a time, three for random grains), so the cloud never drops out. Density at noon still stops grains, and synced grains stay on the clock. |
+| **Formant** | on/off | **Rain:** pitched grains keep their tone colour, so voices don't go chipmunk going up or monster going down. Each grain finds the pitch period of its source, follows its pulses cycle by cycle (so vibrato is tracked), and lays down Hann-windowed slices two periods long, centred on those pulses and read at normal speed, at the new period (PSOLA). Overlapping grains lay their slices down in step, so they add up in phase. Noisy material, where no pitch is found, is played as short slices at jittered spacing, so its colour stays put too. |
+| **Reverse** | 0 to 100% | **Rain** (Grain Character): the chance each grain plays backwards. 50% mixes swells and forward grains; 100% is fully backwards. |
 | **Random Pan** | 0 to 100% | **Rain** (Grain Character): pulls each grain towards a random point in the stereo field. At 0 grains spread as on the module (wider with more randomness and more overlapping grains); at 100% each lands anywhere from hard left to hard right. |
 | **Shape** | 0 to 100% | Grain envelope: square at the left, a sharp attack with a decay at 1/3, a smooth bell around 2/3, and reversed (slow swell, sharp end) at the right. On the panel, the moon's glow blooms, becoming a wide halo ring near the top of the range. |
 | **Pitch** | −24 to +24 st | Grain playback pitch, with the module's knob law: each way from noon the knob steps through 0, 1, 3, 4, 7, 12 and 24 semitones, holding each interval for the first third of its sixth of the travel and gliding smoothly to the next. Pitch modulation and Pitch Random are continuous on top. |
-| **Random** (×4) | −100 to +100% | The small knobs under Time, Size, Shape and Pitch. On Beads these are attenuverters; with nothing patched they set randomness. Clockwise: a new random value for every grain. Counter-clockwise: the value jumps only occasionally. Centre: off. |
+| **Random** (×4) | −100 to +100% | The small knobs under Time, Size, Shape and Pitch. On Beads these are attenuverters; with nothing patched they set randomness. Clockwise: random grains; counter-clockwise: the value jumps only occasionally; centre: off. **Rain:** the randomness is correlated over time. Each control follows a slowly wandering random value (a new level every 4 to 7 seconds, eased between) and each grain adds a small variation of its own (a fifth of the spread), so random clouds evolve rather than flicker. On the module every grain draws a fresh value. |
 
 ## Texture controls
 
@@ -98,7 +101,6 @@ the host's tempo.
 - Grains: Density divides the clock left of noon (every 1 to 16 pulses; the panel
   names the resulting note), fires on every pulse at noon, and picks pulses at
   random right of noon. Time snaps to whole clock steps back in the buffer.
-- Delay: Density picks a ratio of the clock for the delay time.
 
 ## Scale (Rain)
 
@@ -139,6 +141,12 @@ are turned down a little, since in-phase grains add up louder), and a grain whos
 pitch differs from the one before glides to it over about 12 ms. Vintage and the two
 tapes keep the module's 4-point Hermite reader as part of their character.
 
+**Keeping the recording (Rain).** Changing quality carries the buffer over, frozen or
+not: it is resampled to the new quality's rate (low-passed first when that is lower)
+and stored in the new format, so a frozen sound keeps playing at the same pitch with
+the new character. A host reset (transport stop in some hosts) or re-prepare keeps
+it too; only the reverb tail is cleared.
+
 ## Levels (Rain)
 
 | Control | Range | What it does |
@@ -152,11 +160,12 @@ tapes keep the module's 4-point Hermite reader as part of their character.
 - The CV inputs and the assignable CV (the Motion modulators cover the common uses).
 - The wavetable synth mode the module falls into when nothing is patched.
 - Mono mode (double buffer length when only one input is patched).
+- Delay mode (see above).
 
 ## Front panel
 
 Built in `source/PluginEditor.cpp` and `source/ui/`, in Overcast's night-sky style:
-preset bar, Grains/Delay switch, the grain display (`ui/GrainDisplay`: the buffer
+preset bar, the grain display (`ui/GrainDisplay`: the buffer
 waveform, Time marker and grain envelopes, drawn with Beads' own
 laws for grain length, envelope and trigger rate), eight large knobs, the Random
 row with Input, Output and Auto, the Motion and Tempo & Scale panels, and Freeze,

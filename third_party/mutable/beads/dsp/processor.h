@@ -90,24 +90,45 @@ class Processor {
   void Configure(Media media, bool mono);
   
   inline Media media() const { return media_; }
+
+  // Rain: the recording, as stereo frames at history_rate() (the rate the buffer
+  // stores at, after any tape decimation), so it can be carried across a change of
+  // quality in pieces. ExportHistory copies frames out, newest first, starting
+  // first_age frames back. After Configure, BeginImport empties the new buffer and
+  // ImportHistory appends frames, oldest first, as if they had just been recorded.
+  inline float history_rate() const { return sample_rate() / float(ratio()); }
+  int history_capacity() const;
+  int history_length() const;
+  void ExportHistory(FloatFrame* newest_first, int first_age, int count) const;
+  void BeginImport();
+  void ImportHistory(const FloatFrame* oldest_first, int count);
   inline bool mono() const { return mono_; }
   
-  inline float sample_rate() const {
+  inline float sample_rate() const { return SampleRateFor(media_); }
+  inline int ratio() const { return RatioFor(media_); }
+
+  // Rain: the same, for any media (so a quality change can be planned ahead).
+  static inline float HistoryRateFor(Media media) {
+    return SampleRateFor(media) / float(RatioFor(media));
+  }
+  static int HistoryCapacityFor(Media media);
+
+  static inline float SampleRateFor(Media media) {
 #ifdef ENABLE_HARDWARE_24K
     float sr[5] = { 24000.0f, 48000.0f, 32000.0f, 48000.0f, 48000.0f };
 #else
     float sr[5] = { 48000.0f, 48000.0f, 32000.0f, 48000.0f, 48000.0f };
 #endif  // ENABLE_HARDWARE_24K
-    return sr[media_];
+    return sr[media];
   }
   
-  inline int ratio() const {
+  static inline int RatioFor(Media media) {
 #ifdef ENABLE_HARDWARE_24K
     int ratio[5] = { 1, 2, 1, 1, 1 };
 #else
     int ratio[5] = { 2, 2, 1, 1, 1 };
 #endif  // ENABLE_HARDWARE_24K
-    return ratio[media_];
+    return ratio[media];
   }
   
   inline uint8_t* delay_buffer_raw_bytes(size_t offset) {

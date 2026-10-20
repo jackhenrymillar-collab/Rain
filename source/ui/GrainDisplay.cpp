@@ -93,41 +93,6 @@ String GrainDisplay::syncTimeText (float t, float bufferSeconds, double bpm, int
     return String (static_cast<int> (steps)) + " × " + noteName (step);
 }
 
-namespace
-{
-    // Beads' clocked delay ratios, selected by DENSITY.
-    constexpr float kDelayRatios[] = {
-        1.0f / 16, 1.0f / 16, 1.0f / 8, 1.0f / 8, 1.0f / 4, 1.0f / 4, 1.0f / 2, 1.0f / 2, 1.0f, 1.0f,
-        1.0f, 1.0f, 1.0f / 2, 1.0f / 3, 1.0f / 4, 1.0f / 6, 1.0f / 8, 1.0f / 10, 1.0f / 12, 1.0f / 16, 1.0f / 16, 1.0f / 16,
-    };
-
-    float clockRatio (float density)
-    {
-        return kDelayRatios[jlimit (0, 21, static_cast<int> (density * 20.0f + 0.5f))];
-    }
-}
-
-float GrainDisplay::delaySeconds (float density, float buffer, bool sync, double bpm, int rateIndex)
-{
-    if (sync)
-    {
-        const auto step = dsp::kSyncDivisionBeats[static_cast<size_t> (jlimit (0, 5, rateIndex))];
-        return static_cast<float> (step * 60.0 / bpm) * clockRatio (density);
-    }
-    return std::max (68.0f / 48000.0f, buffer * std::pow (2.0f, -std::abs (density - 0.5f) * 18.0f));
-}
-
-String GrainDisplay::delayText (float density, float buffer, bool sync, double bpm, int rateIndex)
-{
-    if (sync)
-    {
-        const auto step = static_cast<double> (dsp::kSyncDivisionBeats[static_cast<size_t> (jlimit (0, 5, rateIndex))]);
-        return noteName (step * clockRatio (density));
-    }
-    const float s = delaySeconds (density, buffer, false, bpm, rateIndex);
-    return s < 1.0f ? String (roundToInt (s * 1000.0f)) + " ms" : String (s, 2) + " s";
-}
-
 void GrainDisplay::spawn()
 {
     triggers.push_back (0.0f);
@@ -135,20 +100,23 @@ void GrainDisplay::spawn()
         return;
 
     auto& e = monitor.effective;
-    const auto lerpRandom = [this] (float base, float knob) {
+    // As the engine does it: a slowly drifting random value plus a little per grain.
+    const auto lerpRandom = [this] (float base, float knob, int drift) {
         const float a = randomAmount (knob * 0.01f);
         const float blend = a > 0.0f ? a : std::min (1.0f, -3.0f * a * rng.nextFloat());
-        return base + (rng.nextFloat() - base) * blend;
+        const float d = monitor.randomDrift[static_cast<size_t> (drift)].load();
+        const float r = 0.8f * (0.5f + 0.5f * d) + 0.2f * rng.nextFloat();
+        return base + (r - base) * blend;
     };
 
     Grain g;
     // SIZE RANDOM works on Beads' own SIZE value, around the length the engine asks for.
-    const float size = lerpRandom (dsp::RainEngine::beadsSizeForSeconds (monitor.grainSeconds.load()), param (ParamID::sizeRandom));
+    const float size = lerpRandom (dsp::RainEngine::beadsSizeForSeconds (monitor.grainSeconds.load()), param (ParamID::sizeRandom), 1);
     g.age = 0.0f;
-    g.position = lerpRandom (e[static_cast<size_t> (dsp::ModTarget::time)].load(), param (ParamID::timeRandom));
+    g.position = lerpRandom (e[static_cast<size_t> (dsp::ModTarget::time)].load(), param (ParamID::timeRandom), 0);
     g.seconds = dsp::RainEngine::grainSeconds (size);
     g.reverse = rng.nextFloat() * 100.0f < param (ParamID::reverse);
-    g.shape = lerpRandom (e[static_cast<size_t> (dsp::ModTarget::shape)].load(), param (ParamID::shapeRandom));
+    g.shape = lerpRandom (e[static_cast<size_t> (dsp::ModTarget::shape)].load(), param (ParamID::shapeRandom), 2);
     g.life = jlimit (0.35f, 1.6f, g.seconds + 0.45f);
     g.lane = rng.nextFloat();
     g.amp = 0.55f + 0.45f * rng.nextFloat();
@@ -164,11 +132,10 @@ void GrainDisplay::advance (float dt)
         t += dt;
     triggers.erase (std::remove_if (triggers.begin(), triggers.end(), [] (float t) { return t > kLaneSeconds; }), triggers.end());
 
-    const bool delayMode = param (ParamID::mode) > 0.5f;
     const bool playing = param (ParamID::seedLock) > 0.5f || param (ParamID::seed) > 0.5f;
-    const float d = monitor.effective[static_cast<size_t> (dsp::ModTarget::density)].load();
+    const float d = monitor.spawnDensity.load();
 
-    if (delayMode || ! playing)
+    if (! playing)
     {
         lastStep = -1;
         untilNext = 0.0f;
@@ -220,12 +187,8 @@ void GrainDisplay::paint (Graphics& g)
     const float plotW = right - left, mid = (top + bottom) * 0.5f;
     const float buffer = monitor.bufferSeconds.load();
     const bool frozen = param (ParamID::freeze) > 0.5f;
-    const bool delayMode = param (ParamID::mode) > 0.5f;
-    const bool sync = param (ParamID::sync) > 0.5f;
-    const int rateIndex = jlimit (0, 5, static_cast<int> (param (ParamID::syncRate)));
     auto& e = monitor.effective;
     const float time = e[static_cast<size_t> (dsp::ModTarget::time)].load();
-    const float density = e[static_cast<size_t> (dsp::ModTarget::density)].load();
 
     // 0 at the edges, 1 inside: a long fade on the left, a short one on the right.
     const auto edgeFade = [&] (float x) {
@@ -280,7 +243,18 @@ void GrainDisplay::paint (Graphics& g)
             band.lineTo (xAt (c), mid + 1.5f + smooth[c] * (half - 2.0f));
         band.closeSubPath();
 
-        const float body = frozen ? 0.3f : 0.2f;
+        // A soft glow round the band: wide, faint strokes of the outline under it.
+        for (int i = 3; i >= 1; --i)
+        {
+            const float a = (frozen ? 0.0425f : 0.034f);
+            ColourGradient haze (mist.withAlpha (0.0f), left, 0.0f, mist.withAlpha (a), right, 0.0f, false);
+            haze.addColour (0.22, mist.withAlpha (a));
+            haze.addColour (0.96, mist.withAlpha (a));
+            g.setGradientFill (haze);
+            g.strokePath (band, PathStrokeType (static_cast<float> (i) * 5.0f, PathStrokeType::curved, PathStrokeType::rounded));
+        }
+
+        const float body = frozen ? 0.22f : 0.14f;
         ColourGradient fill (mist.withAlpha (0.0f), left, 0.0f, mist.withAlpha (body), right, 0.0f, false);
         fill.addColour (0.22, mist.withAlpha (body));
         fill.addColour (0.96, mist.withAlpha (body));
@@ -303,31 +277,6 @@ void GrainDisplay::paint (Graphics& g)
         g.fillRect (right, top - 4.0f, 1.2f, bottom - top + 8.0f);
     }
 
-    const double bpm = monitor.bpm.load();
-    const float delay = delaySeconds (density, buffer, sync, bpm, rateIndex);
-
-    if (delayMode)
-    {
-        // Echo taps: one per repeat, fading with FEEDBACK.
-        const float fb = e[static_cast<size_t> (dsp::ModTarget::feedback)].load();
-        const float spacing = delay / buffer;
-        float a = 0.9f;
-        for (int k = 1; k <= 24 && spacing * plotW > 2.0f; ++k)
-        {
-            const float x = right - static_cast<float> (k) * spacing * plotW;
-            if (x < left)
-                break;
-            const float h = (bottom - top) * 0.42f * a;
-            ColourGradient tap (Theme::dotGlow.withAlpha (0.0f), x, mid - h, Theme::dotGlow.withAlpha (0.0f), x, mid + h, false);
-            tap.addColour (0.5, Theme::dotGlow.withAlpha ((0.15f + 0.75f * a) * edgeFade (x)));
-            g.setGradientFill (tap);
-            g.fillRoundedRectangle (x - 1.2f, mid - h, 2.4f, 2.0f * h, 1.2f);
-            a *= std::max (fb, 0.08f);
-            if (a < 0.03f)
-                break;
-        }
-    }
-    else
     {
         // Grains: each its envelope shape, laid over the part of the buffer it plays,
         // drawn as a soft glow that fades towards its base, with a fine bright edge.
@@ -365,9 +314,9 @@ void GrainDisplay::paint (Graphics& g)
         }
     }
 
-    // TIME marker (or the delay time), drawn last so it sits on top: a faint gold
+    // TIME marker, drawn last so it sits on top: a faint gold
     // dashed line with a soft glow, present but quieter than the grains.
-    const float tx = right - (delayMode ? jmin (1.0f, delay / buffer) : time) * plotW;
+    const float tx = right - time * plotW;
     {
         ColourGradient halo (Theme::gold.withAlpha (0.0f), tx - 5.0f, 0.0f, Theme::gold.withAlpha (0.0f), tx + 5.0f, 0.0f, false);
         halo.addColour (0.5, Theme::gold.withAlpha (0.07f));

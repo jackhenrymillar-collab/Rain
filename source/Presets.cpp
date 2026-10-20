@@ -19,9 +19,9 @@ namespace
     };
 
     // Choice indices, for readability.
-    namespace Q { constexpr float vintage = 1, cleanTape = 2, dirtyTape = 3; }
+    namespace Q { constexpr float vintage = 1, cleanTape = 2, dirtyTape = 3, studio = 4; }
     namespace S { constexpr float major = 2, penta = 4, minorPenta = 5, fifths = 6, octaves = 7; }
-    namespace R { constexpr float quarter = 0, eighth = 1, sixteenth = 2, eighthT = 4; }
+    namespace R { constexpr float eighth = 1, sixteenth = 2, eighthT = 4; }
     namespace T { constexpr float time = 1, size = 2, shape = 3, pitch = 4, density = 5, feedback = 6, reverb = 8; }
 
     namespace P = ParamID;
@@ -63,13 +63,12 @@ namespace
                             { P::pitchRandom, 50 }, { P::scale, S::fifths }, { P::reverb, 35 }, { P::dryWet, 60 } } },
         { "Sampler Hail", { { P::quality, Q::vintage }, { P::size, 7 }, { P::shape, 0 }, { P::density, 20 },
                             { P::timeRandom, 50 }, { P::reverb, 25 }, { P::dryWet, 60 } } },
-        { "Tape Echo", { { P::mode, 1 }, { P::quality, Q::dirtyTape }, { P::density, 20 }, { P::feedback, 55 },
-                         { P::reverb, 15 }, { P::dryWet, 40 } } },
-        { "Quarter Echoes", { { P::mode, 1 }, { P::sync, 1 }, { P::syncRate, R::quarter }, { P::density, 45 }, { P::quality, Q::cleanTape },
-                              { P::feedback, 50 }, { P::shape, 60 }, { P::reverb, 35 }, { P::dryWet, 45 } } },
-        { "Eighth Swells", { { P::mode, 1 }, { P::sync, 1 }, { P::syncRate, R::eighth }, { P::density, 45 }, { P::feedback, 62 }, { P::shape, 80 },
-                             { P::mod1Target, T::feedback }, { P::mod1Rate, 0.1f }, { P::mod1Depth, 20 },
-                             { P::reverb, 55 }, { P::dryWet, 45 } } },
+        { "Tape Memories", { { P::quality, Q::dirtyTape }, { P::size, 55 }, { P::shape, 60 }, { P::density, 80 },
+                             { P::timeRandom, 45 }, { P::feedback, 30 }, { P::soften, 30 }, { P::reverb, 40 }, { P::dryWet, 60 } } },
+        { "Glass Choir", { { P::quality, Q::studio }, { P::formant, 1 }, { P::overlap, 1 }, { P::size, 65 }, { P::shape, 62 },
+                           { P::density, 88 }, { P::pitch, dsp::detunePosition (12.0f) }, { P::randomPan, 40 }, { P::reverb, 60 }, { P::dryWet, 65 } } },
+        { "Eighth Showers", { { P::sync, 1 }, { P::syncRate, R::eighth }, { P::quality, Q::cleanTape }, { P::density, 30 }, { P::size, 40 },
+                              { P::shape, 50 }, { P::pitchRandom, 35 }, { P::scale, S::penta }, { P::reverb, 40 }, { P::dryWet, 55 } } },
         { "Frozen Lake", { { P::time, 70 }, { P::size, 91 }, { P::shape, 66 }, { P::density, 88 },
                            { P::timeRandom, 30 }, { P::pitchRandom, 15 }, { P::reverb, 75 }, { P::dryWet, 80 },
                            { P::mod2Target, T::shape }, { P::mod2Rate, 0.2f }, { P::mod2Depth, 25 } } },

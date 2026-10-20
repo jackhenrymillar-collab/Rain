@@ -31,7 +31,6 @@ public:
 private:
     void timerCallback() override { tick(); }
     void layoutContent();
-    void showMode (int index);
     void showQuality (int index);
     void updateLiveValues();
 
@@ -45,18 +44,18 @@ private:
     juce::Component content;
     ui::SkyBackground sky;
     std::unique_ptr<ui::MoonSwitch> moon;
+
+    // Title.
+    ui::GrainDisplay grainDisplay;
     ui::PresetBar presetBar;
     juce::TextButton saveButton { "SAVE" };
-
-    // Mode.
-    juce::Label modeTitle, modeDescription;
-    std::array<juce::TextButton, 2> modeChips;
-    std::unique_ptr<juce::ParameterAttachment> modeAttachment;
-    ui::GrainDisplay grainDisplay;
 
     // Knobs.
     std::vector<std::unique_ptr<ui::OrbKnob>> knobs, smallKnobs, characterKnobs;
     juce::TextButton autoGainButton { "AUTO" };
+    // Input: aim for peaks between -12 and -1 dBFS (Beads' input gain soft-clips above).
+    // Output: peaks ideally up to -1 dBFS.
+    ui::LevelMeter inputMeter { -12.0f, -1.0f }, outputMeter { -6.0f, -1.0f };
     juce::TextButton overlapButton { "OVERLAP" };
     juce::TextButton formantButton { "FORMANT" };
 
@@ -77,7 +76,7 @@ private:
 
     // Footer.
     juce::TextButton freezeButton { "FREEZE" }, seedButton { "SEED" }, seedLockButton { "SEED LOCK" };
-    juce::Label qualityLabel;
+    juce::Label qualityLabel, presetLabel;
     std::array<juce::TextButton, 5> qualityChips;
     std::unique_ptr<juce::ParameterAttachment> qualityAttachment;
 

@@ -2,6 +2,8 @@
 #include "dsp/Motion.h"
 #include "dsp/RainEngine.h"
 
+#include "beads/dsp/randomized_parameter.h"
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -179,27 +181,40 @@ TEST_CASE ("SIZE runs through forward grain lengths and inverts cleanly")
     CHECK (RainEngine::grainSeconds (RainEngine::beadsSize (1.0f)) > 3.0f);
     for (float s : { 0.01f, 0.05f, 0.2f, 1.0f })
         CHECK (RainEngine::grainSeconds (RainEngine::beadsSizeForSeconds (s)) == Catch::Approx (s).epsilon (0.01));
-    CHECK (RainEngine::overlapAmount (0.0f) == Catch::Approx (1.0f));
-    CHECK (RainEngine::overlapAmount (1.0f) == Catch::Approx (8.0f));
 }
 
-TEST_CASE ("Overlap sets grain length from the grain rate")
+TEST_CASE ("Overlap keeps the grain size and raises the grain rate to fill gaps")
 {
-    RainEngine e;
-    RainParams p;
-    p.overlap = true;
-    p.size = 1.0f / 3.0f; // 2 grains overlapping
-    p.density = 0.3f;     // regular grains
-    e.setParams (p);
-    e.prepare (48000.0, 256);
-    std::vector<float> l (256, 0.0f), r (256, 0.0f);
-    for (int b = 0; b < 40; ++b)
-        e.process (l.data(), r.data(), 256);
-    const float rate = RainEngine::grainRate (0.3f, 0.0f);
-    CHECK (rate == Catch::Approx (130.81278f * std::exp2 (-4.8f)).epsilon (0.001));
-    CHECK (e.monitor().grainSeconds.load() == Catch::Approx (2.0f / rate).epsilon (0.02));
+    auto run = [] (bool overlap, float size, float density) {
+        RainEngine e;
+        RainParams p;
+        p.overlap = overlap;
+        p.size = size;
+        p.density = density;
+        e.setParams (p);
+        e.prepare (48000.0, 256);
+        std::vector<float> l (256, 0.0f), r (256, 0.0f);
+        for (int b = 0; b < 40; ++b)
+            e.process (l.data(), r.data(), 256);
+        return std::pair { e.monitor().grainSeconds.load(), e.monitor().spawnDensity.load() };
+    };
 
-    // On a clock, the length follows the tempo: 1/16 at 120 bpm, every pulse.
+    for (float density : { 0.3f, 0.8f })
+    {
+        const auto [lengthOff, densityOff] = run (false, 0.4f, density);
+        const auto [lengthOn, densityOn] = run (true, 0.4f, density);
+        CHECK (lengthOn == Catch::Approx (lengthOff)); // SIZE is untouched
+        CHECK (densityOff == Catch::Approx (density));
+        // Sparse grains come often enough to overlap (2x regular, 3x random).
+        const float rate = RainEngine::grainRate (densityOn, 0.0f);
+        CHECK (rate * lengthOn == Catch::Approx (density < 0.5f ? 2.0f : 3.0f).epsilon (0.02));
+    }
+
+    // Already dense grains, and DENSITY at noon, are left alone.
+    CHECK (run (true, 0.4f, 0.02f).second == Catch::Approx (0.02f));
+    CHECK (run (true, 0.4f, 0.5f).second == Catch::Approx (0.5f));
+
+    // On a clock, grains fire on the tempo: 1/16 at 120 bpm, every pulse.
     CHECK (RainEngine::grainRate (0.0f, 8.0f) == Catch::Approx (8.0f));
     CHECK (RainEngine::grainRate (0.2f, 8.0f) == Catch::Approx (2.0f)); // every 4th pulse
 }
@@ -330,4 +345,39 @@ TEST_CASE ("PITCH follows the Beads knob law")
     }
     for (float st : { -24.0f, -12.0f, -7.0f, 0.0f, 1.0f, 3.0f, 4.0f, 5.5f, 7.0f, 12.0f, 18.0f, 24.0f })
         CHECK (detuneSemitones (detunePosition (st)) == Catch::Approx (st).margin (0.01f));
+}
+
+TEST_CASE ("Random values follow a slow drift with a little per-grain variation")
+{
+    // Full TIME RANDOM: on the module each grain lands anywhere; with correlated
+    // randomness grains stay within a narrow band around the drifting value.
+    beads::RandomizedParameter r { 0.5f, 1.0f, 0.0f, false };
+    for (float drift : { -0.8f, 0.0f, 0.6f })
+    {
+        r.drift = drift;
+        r.jitter = 0.2f;
+        const float centre = 0.8f * (0.5f + 0.5f * drift);
+        float lo = 1.0f, hi = 0.0f;
+        for (int i = 0; i < 2000; ++i)
+        {
+            const float v = r.value();
+            lo = std::min (lo, v);
+            hi = std::max (hi, v);
+        }
+        INFO ("drift " << drift << ": " << lo << " to " << hi);
+        CHECK (lo >= centre - 1.0e-4f);
+        CHECK (hi <= centre + 0.2f + 1.0e-4f);
+        CHECK (hi - lo > 0.15f); // still some variation per grain
+    }
+
+    // jitter 1 is the module's behaviour: anywhere in the range.
+    r.jitter = 1.0f;
+    float lo = 1.0f, hi = 0.0f;
+    for (int i = 0; i < 2000; ++i)
+    {
+        lo = std::min (lo, r.value());
+        hi = std::max (hi, r.value());
+    }
+    CHECK (lo < 0.05f);
+    CHECK (hi > 0.95f);
 }

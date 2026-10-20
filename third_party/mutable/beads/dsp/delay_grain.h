@@ -82,7 +82,10 @@ class DelayGrain : public Grain {
     clean_ = false;
     sinc_level_ = 0;
     psola_ = false;
+    voiced_ = false;
     num_subs_ = 0;
+    period_ = 1.0f;
+    mark_ = next_sub_ = 0.0f;
     gain_[0][0] = gain_[0][1] = 0.5f;
     gain_[1][0] = gain_[1][1] = 0.5f;
     
@@ -106,8 +109,15 @@ class DelayGrain : public Grain {
     // resampled as usual. A formant grain's pointer follows the content at
     // normal speed, so it is trimmed for that speed.
     float period = 0.0f;
+    bool voiced = false;
     if (options.formant && std::fabs(std::fabs(speed) - 1.0f) > 0.003f) {
       period = EstimatePeriod(delay_line, std::max(delay, 0.0f));
+      voiced = period > 0.0f;
+      if (!voiced) {
+        // Noisy material: short slices from around the content, at jittered
+        // spacing, so its colour stays put without a buzz at the slice rate.
+        period = sample_rate_ * 0.006f;
+      }
     }
     const float travel_speed = period > 0.0f ? (speed > 0.0f ? 1.0f : -1.0f) : speed;
 
@@ -182,9 +192,17 @@ class DelayGrain : public Grain {
     num_subs_ = 0;
     if (psola_) {
       period_ = period;
-      anchor_ = delay;
+      voiced_ = voiced;
+      mark_ = voiced ? FindPulse(delay_line, delay, period) : delay;
       next_sub_ = 0.0f;
-      until_analysis_ = sample_rate_ * 0.04f;
+      // Lay slices down in step with the grain before, so the two pulse trains
+      // add up in phase instead of comb filtering the tone.
+      if (voiced && previous && previous->psola_ && previous->voiced_ &&
+          (previous->speed_target_ > 0.0f) == (speed > 0.0f) &&
+          std::fabs(std::fabs(previous->speed_target_) - std::fabs(speed)) <
+              0.03f * std::fabs(speed)) {
+        next_sub_ = previous->next_sub_;
+      }
     }
     
     // Roughly equal power. Uses first order approximation of square root.
@@ -464,9 +482,88 @@ class DelayGrain : public Grain {
     return float(best_lag);
   }
 
+  // Rain: the strongest peak within half a period of `delay`: a pitch mark,
+  // so slices are centred on the source's pulses.
+  template<typename DelayLineType>
+  float FindPulse(const DelayLineType* delay_line, float delay, float period) const {
+    const int half = int(period * 0.5f);
+    const int centre = int(delay);
+    int best = centre;
+    float peak = -1.0f;
+    for (int d = std::max(0, centre - half); d <= centre + half; ++d) {
+      const float x = std::fabs(delay_line->ReadMono(d));
+      if (x > peak) {
+        peak = x;
+        best = d;
+      }
+    }
+    return float(best);
+  }
+
+  // Rain: move the pitch mark on by one period, to wherever the source best
+  // repeats the cycle around the current mark (so marks follow vibrato and stay
+  // on the pulses), and update the period from the step taken.
+  template<typename DelayLineType>
+  void StepMark(const DelayLineType* delay_line, float dir) {
+    const float period = period_;
+    const int origin = int(mark_);
+    if (voiced_) {
+      const int half = int(period * 0.5f);
+      const int stride = std::max(1, int(period / 48.0f));
+      const int lo = int(period * 0.88f), hi = int(period * 1.12f) + 1;
+      const int coarse = std::max(1, (hi - lo) / 20);
+      float ea = 0.0f;
+      for (int j = -half; j <= half; j += stride) {
+        const float a = delay_line->ReadMono(origin + j);
+        ea += a * a;
+      }
+      float best = -1.0f;
+      int best_lag = int(period + 0.5f);
+      auto score = [&](int lag) {
+        const int target = origin - int(dir) * lag;
+        if (target - half < 0) {
+          return -1.0f;
+        }
+        float dot = 0.0f, eb = 0.0f;
+        for (int j = -half; j <= half; j += stride) {
+          const float a = delay_line->ReadMono(origin + j);
+          const float b = delay_line->ReadMono(target + j);
+          dot += a * b;
+          eb += b * b;
+        }
+        return ea > 1e-9f && eb > 1e-9f ? dot / std::sqrt(ea * eb) : 0.0f;
+      };
+      for (int lag = lo; lag <= hi; lag += coarse) {
+        const float c = score(lag);
+        if (c > best) {
+          best = c;
+          best_lag = lag;
+        }
+      }
+      const int centre = best_lag;
+      for (int lag = std::max(lo, centre - coarse + 1); lag <= std::min(hi, centre + coarse - 1); ++lag) {
+        if (lag == centre) {
+          continue;
+        }
+        const float c = score(lag);
+        if (c > best) {
+          best = c;
+          best_lag = lag;
+        }
+      }
+      if (best >= 0.5f) {
+        mark_ -= dir * float(best_lag);
+        period_ += 0.5f * (float(best_lag) - period_);
+        return;
+      }
+    }
+    mark_ -= dir * period;
+  }
+
   // Rain: one output sample of a formant-keeping (PSOLA) grain. Hann-windowed
-  // slices two pitch periods long are read at normal speed and laid down every
-  // period / ratio samples, so the pitch moves but the spectral envelope does not.
+  // slices two pitch periods long, centred on the source's pitch marks, are read
+  // at normal speed and laid down every period / ratio samples, so the pitch
+  // moves but the spectral envelope does not.
   template<typename DelayLineType>
   FloatFrame RenderPsola(const DelayLineType* delay_line) {
     const bool frozen = delay_line->frozen();
@@ -474,29 +571,31 @@ class DelayGrain : public Grain {
     const float ratio = std::fabs(speed_f_);
     const float content = float(delay_) / 1024.0f;
     if (!frozen) {
-      anchor_ += 1.0f;
+      mark_ += 1.0f;
     }
 
-    // Track the pitch as the content moves on.
-    until_analysis_ -= 1.0f;
-    if (until_analysis_ <= 0.0f) {
-      until_analysis_ = sample_rate_ * 0.04f;
-      const float period = EstimatePeriod(delay_line, content);
-      if (period > 0.0f) {
-        period_ = period;
-        anchor_ = content;
+    // Keep the mark nearest the content as the content moves on.
+    for (int step = 0; step < 4; ++step) {
+      const float next = mark_ - dir * period_;
+      if (std::fabs(next - content) >= std::fabs(mark_ - content)) {
+        break;
       }
+      StepMark(delay_line, dir);
     }
 
-    // Start a new slice: on the source's period grid, nearest the content.
+    // Start a new slice, centred on the mark.
     next_sub_ -= 1.0f;
     if (next_sub_ <= 0.0f) {
-      next_sub_ += std::max(1.0f, period_ / ratio);
+      float hop = period_ / ratio;
+      float centre = mark_;
+      if (!voiced_) {
+        hop *= 0.7f + 0.6f * stmlib::Random::GetFloat();
+        centre = content + (stmlib::Random::GetFloat() - 0.5f) * period_;
+      }
+      next_sub_ += std::max(1.0f, hop);
       if (num_subs_ < kMaxSubs) {
-        const float travelled = anchor_ - content;  // source samples moved on
-        const float k = std::floor(travelled / period_ + 0.5f);
         Sub& sub = subs_[num_subs_++];
-        sub.delay = anchor_ - k * period_;
+        sub.delay = centre + dir * period_;
         sub.position = 0.0f;
         sub.length = 2.0f * period_;
       }
@@ -529,10 +628,12 @@ class DelayGrain : public Grain {
         ++i;
       }
     }
-    // Keep the level close to a resampled grain's. Going up, slices overlap and
-    // add up to about `ratio` (less a little, since the harmonics thin out); going
-    // down, they spread apart and the level drops with them.
-    const float gain = ratio >= 1.0f ? std::pow(ratio, -0.75f) : 1.0f / std::sqrt(ratio);
+    // Slices overlap about `ratio` deep. Pitched slices add up in phase, so that
+    // is divided out going up; going down, each pulse keeps its level. Noise
+    // slices add up in power instead.
+    const float gain = voiced_
+        ? (ratio >= 1.0f ? kVoicedDown / std::pow(ratio, 0.25f) : kVoicedDown)
+        : kNoise / std::sqrt(ratio);
     sum.l *= gain;
     sum.r *= gain;
     return sum;
@@ -544,6 +645,8 @@ class DelayGrain : public Grain {
     float length;
   };
   enum { kMaxSubs = 12 };
+  static constexpr float kVoicedDown = 0.8f;
+  static constexpr float kNoise = 1.4f;
 
   float gain_[2][2];
   
@@ -560,9 +663,9 @@ class DelayGrain : public Grain {
 
   bool psola_;
   float period_;
-  float anchor_;
+  float mark_;
   float next_sub_;
-  float until_analysis_;
+  bool voiced_;
   Sub subs_[kMaxSubs];
   int num_subs_;
 

@@ -68,6 +68,11 @@ TEST_CASE ("Beads runs at its own rate for each quality")
     {
         p.quality = kAllQualities[q];
         e.setParams (p);
+        // A new quality takes over once the grains have faded out and the recording
+        // has been carried over, a slice of work per callback.
+        std::vector<float> l (1024, 0.0f), r (1024, 0.0f);
+        for (int b = 0; b < 20; ++b)
+            e.process (l.data(), r.data(), 1024);
         CHECK (e.internalRate() == expected[q]);
         CHECK (e.latencySamples() > 0);
         CHECK (e.latencySamples() < 441); // under 10 ms

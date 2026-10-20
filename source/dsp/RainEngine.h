@@ -27,14 +27,6 @@ enum class Quality
     studio     // Rain: 48 kHz, 32-bit float buffer and reverb, 8 s, cleanest grains
 };
 
-// Grains is Beads' granular mode; Delay is its delay mode, which the module reaches
-// by turning SIZE fully clockwise. Rain gives each its own switch position.
-enum class Mode
-{
-    grains,
-    delay
-};
-
 struct ModSettings
 {
     float rateHz = 0.25f;
@@ -44,11 +36,9 @@ struct ModSettings
 
 struct RainParams
 {
-    Mode mode = Mode::grains;
-
     // Knob positions, 0 to 1, exactly as Beads reads its pots.
     float time = 0.5f;
-    float size = 0.5f;     // unused in delay mode
+    float size = 0.5f;
     float shape = 0.5f;
     float density = 0.5f;  // noon = no grains, left = regular, right = random
     float pitchSemis = 0.0f; // -24 to +24
@@ -81,8 +71,8 @@ struct RainParams
     // pitches favour the root, fifth and third, so clouds lean consonant.
     Scale scale = Scale::off;
 
-    // Overlap: SIZE sets how many grains overlap (1 to 8) instead of their length,
-    // and the length follows DENSITY (and the tempo), so the cloud never has gaps.
+    // Overlap: grains keep their SIZE, and sparse grains come more often so they
+    // always overlap and the cloud has no gaps (free-running only).
     bool overlap = false;
     float reverse = 0.0f; // chance each grain plays backwards, 0 to 1
     float soften = 0.0f;  // rounds off the grains' highs and lows, 0 to 1
@@ -115,8 +105,16 @@ struct EngineMonitor
     std::array<std::atomic<float>, kNumLevels> levels {};
     std::atomic<int> levelWrite { 0 };
 
+    // Peak levels for the panel's meters since the panel last read them (it resets
+    // them to 0): the input as it reaches the buffer, after INPUT gain, and the
+    // plugin's output.
+    mutable std::atomic<float> inputPeak { 0.0f }, outputPeak { 0.0f };
+
     // Grain length Beads is asked for (before SIZE RANDOM), in seconds.
     std::atomic<float> grainSeconds { 0.15f };
+    std::atomic<float> spawnDensity { 0.5f }; // DENSITY as Beads gets it (Overlap may raise the rate)
+    // The slow random drifts behind TIME, SIZE, SHAPE and PITCH RANDOM (-1 to +1).
+    std::array<std::atomic<float>, 4> randomDrift {};
 
     std::atomic<float> bufferSeconds { 4.0f };
     std::atomic<float> bpm { 120.0f };
@@ -168,15 +166,31 @@ public:
     // Beads' grain length law for a forward SIZE value, and its inverse.
     static float grainSeconds (float beadsSize) noexcept;
     static float beadsSizeForSeconds (float seconds) noexcept;
-    // Number of grains overlapping for an Overlap-mode SIZE knob (1 to 8).
-    static float overlapAmount (float size) noexcept;
+    // Overlap: the DENSITY that keeps grains of grainLength seconds overlapping
+    // (unchanged when they already do, or at noon).
+    static float overlapDensity (float density, float grainLength) noexcept;
     // Average grain rate for DENSITY, free-running or on a clock of clockHz (0 = free).
     static float grainRate (float density, float clockHz) noexcept;
 
     const EngineMonitor& monitor() const noexcept { return mon; }
 
 private:
-    void configure (Quality q);
+    // Quality changes (see RainEngine.cpp): the host side, and the Beads side, which
+    // carries the recording over in slices of work.
+    void configureHost();
+    void startSwitch (Quality target, bool keepRecording);
+    bool advanceSwitch (long long budget); // true when finished
+
+    enum class SwitchStage { idle, exporting, filtering, resampling, configuring, importing };
+    struct Switch
+    {
+        SwitchStage stage = SwitchStage::idle;
+        Quality target = Quality::digital;
+        int frames = 0, out = 0, pos = 0, pass = 0;
+        float fromRate = 48000.0f, toRate = 48000.0f;
+        double step = 1.0;
+        beads::FloatFrame x1 {}, x2 {}, y1 {}, y2 {};
+    } switching;
     void runBeadsBlock();
     struct OutFrame
     {
@@ -199,6 +213,9 @@ private:
     std::vector<std::uint16_t> reverbBuffer;
     std::vector<std::uint8_t> studioBuffer; // Studio quality: three 1 MB banks
     std::vector<float> studioReverb;
+    // The recording, while quality changes: as it was, and resampled.
+    static constexpr std::size_t kCarryFrames = 400000; // the longest buffer is 384000 frames
+    std::vector<beads::FloatFrame> carry, carryOut;
 
     InputGain inputGain;
 
@@ -224,11 +241,17 @@ private:
     int beadsFill = 0;
 
     std::vector<OutFrame> fifo;
+    float lastDryGain = 0.0f;
+    bool qualityPending = false;          // a new quality is waiting for the fade-out
+    float qualityFade = 1.0f, qualityFadeStep = 0.0f;
     std::size_t fifoRead = 0, fifoWrite = 0;
 
     // Rain's additions.
     void applyMotion (RainParams& p, float dt);
     Modulator wave { Modulator::Kind::wave, 0x1234567u }, drift { Modulator::Kind::drift, 0x7654321u };
+    // Correlated randomness: a slow random drift each for TIME, SIZE, SHAPE and PITCH.
+    std::array<Modulator, 4> randomDrift { Modulator { Modulator::Kind::drift, 0x13579bdu }, Modulator { Modulator::Kind::drift, 0x2468ace1u },
+                                           Modulator { Modulator::Kind::drift, 0x0badf00du }, Modulator { Modulator::Kind::drift, 0x5eed1234u } };
     Rng pitchRng { 0x2468aceu };
     double bpm = 120.0, beatPos = 0.0;
     std::array<double, kMaxBeadsBlock> beadsBeat {};

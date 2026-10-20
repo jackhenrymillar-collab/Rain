@@ -9,8 +9,7 @@
 namespace rain
 {
 
-class RainProcessor final : public juce::AudioProcessor,
-                            private juce::AsyncUpdater
+class RainProcessor final : public juce::AudioProcessor
 {
 public:
     RainProcessor();
@@ -31,11 +30,12 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 20.0; }
 
-    // Hosts see the factory presets as programs.
-    int getNumPrograms() override { return presets.numFactory(); }
-    int getCurrentProgram() override { return juce::jmax (0, presets.currentFactoryIndex()); }
+    // Hosts see the factory presets as programs, plus one last entry that stands for
+    // whichever user preset is loaded (so the program number never claims "Init").
+    int getNumPrograms() override { return presets.numFactory() + 1; }
+    int getCurrentProgram() override;
     void setCurrentProgram (int index) override;
-    const juce::String getProgramName (int index) override { return presets.factoryName (index); }
+    const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
@@ -48,13 +48,15 @@ public:
     const dsp::EngineMonitor& getMonitor() const noexcept { return engine.monitor(); }
 
 private:
-    void handleAsyncUpdate() override;
+    // Written into saved sessions. 2: grains only (the mode parameter is gone).
+    static constexpr int kStateVersion = 2;
     dsp::RainParams readParams() const noexcept;
+    void processMonoOut (juce::AudioBuffer<float>&, int numSamples);
 
     juce::AudioProcessorValueTreeState state;
     PresetManager presets { state };
     dsp::RainEngine engine;
-    std::atomic<int> engineLatency { 0 };
+    std::vector<float> monoRight; // the right channel for mono tracks, sized in prepareToPlay
 
     // Cached raw parameter pointers: lock-free reads on the audio thread.
     std::atomic<float>* time = nullptr;
@@ -76,7 +78,6 @@ private:
     std::atomic<float>* autoGain = nullptr;
     std::atomic<float>* inputGain = nullptr;
     std::atomic<float>* outputGain = nullptr;
-    std::atomic<float>* mode = nullptr;
     std::atomic<float>* sync = nullptr;
     std::atomic<float>* syncRate = nullptr;
     std::atomic<float>* scale = nullptr;

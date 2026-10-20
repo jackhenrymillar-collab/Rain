@@ -1,5 +1,6 @@
 #include "Components.h"
 
+
 namespace rain::ui
 {
 
@@ -32,6 +33,72 @@ RainLookAndFeel::RainLookAndFeel()
     setColour (TextButton::buttonColourId, Theme::glass);
 }
 
+namespace
+{
+    void glowDot (Graphics& g, Point<float> c, float radius, float spread, Colour colour, float alpha)
+    {
+        for (int i = 4; i >= 1; --i)
+        {
+            const float rr = radius + static_cast<float> (i) * spread;
+            g.setColour (colour.withAlpha (alpha * 0.1f));
+            g.fillEllipse (Rectangle<float> (rr * 2.0f, rr * 2.0f).withCentre (c));
+        }
+        g.setColour (colour.withAlpha (alpha));
+        g.fillEllipse (Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (c));
+    }
+
+    // Halo: a flat glass disc ringed by a faint track and a gold arc of light up to
+    // the setting, ending in a small four-point star. Centre-zero knobs light the arc
+    // from the top, towards whichever side the setting is on.
+    void drawHaloKnob (Graphics& g, Rectangle<float> b, bool small, float startAngle, float endAngle, float angle, bool bipolar)
+    {
+        const auto c = b.getCentre();
+        const float ringR = b.getWidth() * 0.5f;
+        const auto disc = b.reduced (small ? 5.0f : 8.0f);
+        Path orb;
+        orb.addEllipse (disc);
+        DropShadow (Colours::black.withAlpha (0.4f), small ? 10 : 18, { 0, small ? 4 : 8 }).drawForPath (g, orb);
+        ColourGradient face (Colour (0xff2a3184), disc.getCentreX(), disc.getY(), Colour (0xff141a4c), disc.getCentreX(), disc.getBottom(), false);
+        g.setGradientFill (face);
+        g.fillPath (orb);
+        g.setColour (Colour (190, 196, 255).withAlpha (0.28f));
+        g.drawEllipse (disc.reduced (0.5f), 1.0f);
+
+        const float stroke = small ? 2.0f : 3.0f;
+        Path track;
+        track.addCentredArc (c.x, c.y, ringR, ringR, 0.0f, startAngle, endAngle, true);
+        g.setColour (Colour (190, 196, 255).withAlpha (0.16f));
+        g.strokePath (track, PathStrokeType (stroke, PathStrokeType::curved, PathStrokeType::rounded));
+        const float from = bipolar ? 0.5f * (startAngle + endAngle) : startAngle;
+        if (std::abs (angle - from) > 0.01f)
+        {
+            Path arc;
+            arc.addCentredArc (c.x, c.y, ringR, ringR, 0.0f, jmin (from, angle), jmax (from, angle), true);
+            for (int i = 3; i >= 1; --i)
+            {
+                g.setColour (Theme::gold.withAlpha (0.08f));
+                g.strokePath (arc, PathStrokeType (stroke + static_cast<float> (i) * 3.0f, PathStrokeType::curved, PathStrokeType::rounded));
+            }
+            g.setColour (Theme::gold.withAlpha (0.9f));
+            g.strokePath (arc, PathStrokeType (stroke, PathStrokeType::curved, PathStrokeType::rounded));
+        }
+        // The star at the end of the arc.
+        const Point<float> tip (c.x + ringR * std::sin (angle), c.y - ringR * std::cos (angle));
+        const float s = small ? 5.0f : 7.5f;
+        Path star;
+        star.startNewSubPath (tip.x, tip.y - s);
+        star.quadraticTo (tip, { tip.x + s, tip.y });
+        star.quadraticTo (tip, { tip.x, tip.y + s });
+        star.quadraticTo (tip, { tip.x - s, tip.y });
+        star.quadraticTo (tip, { tip.x, tip.y - s });
+        star.closeSubPath();
+        glowDot (g, tip, small ? 1.5f : 2.0f, small ? 1.2f : 1.8f, Theme::dotGlow, 1.0f);
+        g.setColour (Theme::moonLight);
+        g.fillPath (star);
+    }
+
+}
+
 void RainLookAndFeel::drawRotarySlider (Graphics& g, int x, int y, int width, int height,
                                         float sliderPos, float startAngle, float endAngle, Slider& slider)
 {
@@ -40,43 +107,14 @@ void RainLookAndFeel::drawRotarySlider (Graphics& g, int x, int y, int width, in
     const float size = static_cast<float> (jmin (width, height)) - (small ? 10.0f : 14.0f);
     const auto bounds = Rectangle<float> (size, size).withCentre (Rectangle<int> (x, y, width, height).toFloat().getCentre());
 
-    Path orb;
-    orb.addEllipse (bounds);
-
-    // Soft drop shadow.
-    DropShadow (Colours::black.withAlpha (small ? 0.4f : 0.45f), small ? 12 : 22, { 0, small ? 5 : 10 }).drawForPath (g, orb);
-
-    // Glassy navy sphere, lit from the upper left.
-    ColourGradient body (Colour (small ? 0xff5560ae : 0xff5d66b8), bounds.getX() + bounds.getWidth() * 0.36f, bounds.getY() + bounds.getHeight() * 0.30f,
-                         Colour (small ? 0xff181d52 : 0xff1a1f57), bounds.getX() + bounds.getWidth() * 0.36f, bounds.getBottom() + bounds.getHeight() * 0.05f,
-                         true);
-    body.addColour (0.48, Colour (small ? 0xff2a3180 : 0xff2f3787));
-    g.setGradientFill (body);
-    g.fillPath (orb);
-
-    // Darker underside.
-    ColourGradient under (Colours::transparentBlack, bounds.getCentreX(), bounds.getCentreY(),
-                          Colours::black.withAlpha (0.3f), bounds.getCentreX(), bounds.getBottom(), false);
-    g.setGradientFill (under);
-    g.fillPath (orb);
-
-    g.setColour (Colour (190, 196, 255).withAlpha (small ? 0.3f : 0.34f));
-    g.drawEllipse (bounds.reduced (0.5f), 1.0f);
-
-    // Glowing indicator dot.
     const float angle = startAngle + sliderPos * (endAngle - startAngle);
-    const float r = size * 0.34f;
-    const Point<float> dot (bounds.getCentreX() + r * std::sin (angle), bounds.getCentreY() - r * std::cos (angle));
-    const float dotRadius = small ? 2.5f : 3.5f;
-    for (int i = 4; i >= 1; --i)
-    {
-        const float rr = dotRadius + static_cast<float> (i) * (small ? 1.2f : 1.8f);
-        g.setColour (Theme::dotGlow.withAlpha (0.10f));
-        g.fillEllipse (Rectangle<float> (rr * 2.0f, rr * 2.0f).withCentre (dot));
-    }
-    g.setColour (Theme::dotGlow);
-    g.fillEllipse (Rectangle<float> (dotRadius * 2.0f, dotRadius * 2.0f).withCentre (dot));
+    drawHaloKnob (g, bounds, small, startAngle, endAngle, angle, slider.getProperties()["bipolar"]);
+    drawModRing (g, slider, bounds, size, small, startAngle, endAngle, angle);
+}
 
+void RainLookAndFeel::drawModRing (Graphics& g, Slider& slider, Rectangle<float> bounds, float size, bool small,
+                                   float startAngle, float endAngle, float angle)
+{
     // Modulation ring: a gold arc from the knob's setting to where it has been moved.
     const auto mod = slider.getProperties()["mod"];
     if (! mod.isVoid() && static_cast<double> (mod) >= 0.0)
@@ -191,6 +229,10 @@ OrbKnob::OrbKnob (AudioProcessorValueTreeState& state, const String& paramID, co
     slider.setDoubleClickReturnValue (true, param.convertFrom0to1 (param.getDefaultValue()));
     slider.setMouseDragSensitivity (220);
     slider.setTitle (name);
+    // Centre-zero controls (PITCH, the RANDOMs, modulation DEPTH) light their arc
+    // from the top.
+    const auto& range = param.getNormalisableRange();
+    slider.getProperties().set ("bipolar", range.start < 0.0f && std::abs (range.start + range.end) < 1e-4f);
     slider.onValueChange = [this] { updateValueText(); };
     // The orb's soft shadow is costly to draw; cache it, since the falling rain
     // behind repaints the panel every frame.
@@ -384,6 +426,86 @@ void MoonSwitch::mouseUp (const MouseEvent& e)
 {
     if (e.mouseWasClicked() && hitTest (e.x, e.y))
         attachment.setValueAsCompleteGesture (on ? 0.0f : 1.0f);
+}
+
+LevelMeter::LevelMeter (float zoneLowDb, float zoneHighDb) : zoneLow (zoneLowDb), zoneHigh (zoneHighDb)
+{
+    setInterceptsMouseClicks (true, false);
+}
+
+void LevelMeter::push (float peak, float dt)
+{
+    const float db = peak > 0.0f ? jmax (kFloorDb, Decibels::gainToDecibels (peak)) : kFloorDb;
+    // Rise at once, fall back at 24 dB a second; the peak marker holds for a second.
+    levelDb = jmax (db, levelDb - 24.0f * dt);
+    holdTime += dt;
+    if (db >= holdDb)
+    {
+        holdDb = db;
+        holdTime = 0.0f;
+    }
+    else if (holdTime > 1.0f)
+    {
+        holdDb = jmax (db, holdDb - 18.0f * dt);
+    }
+    repaint();
+}
+
+float LevelMeter::xFor (float db, Rectangle<float> area) const
+{
+    const float t = jlimit (0.0f, 1.0f, (db - kFloorDb) / -kFloorDb);
+    return area.getX() + t * area.getWidth();
+}
+
+void LevelMeter::paint (Graphics& g)
+{
+    // A horizontal bar: -48 dB on the left, 0 dB on the right.
+    const auto bounds = getLocalBounds().toFloat();
+    const auto outer = bounds.withSizeKeepingCentre (bounds.getWidth(), 12.0f);
+    const float radius = outer.getHeight() * 0.5f;
+    g.setColour (Theme::glass);
+    g.fillRoundedRectangle (outer, radius);
+
+    const auto area = outer.reduced (1.5f);
+    const float zLeft = xFor (zoneLow, area), zRight = xFor (zoneHigh, area);
+    Path clip;
+    clip.addRoundedRectangle (area, area.getHeight() * 0.5f);
+    {
+        Graphics::ScopedSaveState save (g);
+        g.reduceClipRegion (clip);
+        // The target band.
+        g.setColour (Theme::gold.withAlpha (0.3f));
+        g.fillRect (Rectangle<float> (zLeft, area.getY(), zRight - zLeft, area.getHeight()));
+        // The level, deep blue to white, coral past the band.
+        if (levelDb > kFloorDb)
+        {
+            const float right = xFor (levelDb, area);
+            ColourGradient fill (Colour (110, 128, 225), area.getX(), 0.0f, Colour (240, 243, 255), zRight, 0.0f, false);
+            g.setGradientFill (fill);
+            g.fillRect (Rectangle<float> (area.getX(), area.getY(), jmin (right, zRight) - area.getX(), area.getHeight()));
+            if (right > zRight)
+            {
+                g.setColour (Colour (255, 128, 112));
+                g.fillRect (Rectangle<float> (zRight, area.getY(), right - zRight, area.getHeight()));
+            }
+        }
+        // Tint the band over the level too, so it reads while the meter is full.
+        g.setColour (Theme::gold.withAlpha (0.35f));
+        g.fillRect (Rectangle<float> (zLeft, area.getY(), zRight - zLeft, area.getHeight()));
+        if (holdDb > kFloorDb + 1.0f)
+        {
+            g.setColour (holdDb > zoneHigh ? Colour (255, 128, 112) : Theme::text);
+            g.fillRect (Rectangle<float> (xFor (holdDb, area) - 1.0f, area.getY(), 1.5f, area.getHeight()));
+        }
+    }
+    // Band edges, standing just proud of the bar.
+    g.setColour (Theme::gold);
+    g.fillRect (Rectangle<float> (zRight - 0.75f, outer.getY() - 3.0f, 1.5f, outer.getHeight() + 6.0f));
+    g.setColour (Theme::gold.withAlpha (0.6f));
+    g.fillRect (Rectangle<float> (zLeft - 0.5f, outer.getY() - 2.0f, 1.0f, outer.getHeight() + 4.0f));
+    g.setColour (Theme::hairline);
+    g.drawRoundedRectangle (outer.reduced (0.5f), radius, 1.0f);
+
 }
 
 } // namespace rain::ui

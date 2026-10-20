@@ -309,8 +309,8 @@ void SkyBackground::renderStatic()
     g.addTransform (AffineTransform::scale (scale));
 
     // Glass panels behind the lower rows.
-    for (const auto& panel : { Rectangle<float> (40.0f, 604.0f, 300.0f, 130.0f), Rectangle<float> (358.0f, 604.0f, 506.0f, 130.0f),
-                               Rectangle<float> (882.0f, 604.0f, 248.0f, 130.0f) })
+    for (const auto& panel : { Rectangle<float> (40.0f, 564.0f, 300.0f, 130.0f), Rectangle<float> (358.0f, 564.0f, 506.0f, 130.0f),
+                               Rectangle<float> (882.0f, 564.0f, 248.0f, 130.0f) })
     {
         g.setColour (Colour (18, 24, 66).withAlpha (0.38f));
         g.fillRoundedRectangle (panel, 12.0f);
@@ -330,12 +330,11 @@ void SkyBackground::renderStatic()
     // Section headings above the knob rows.
     g.setColour (Theme::textMuted);
     g.setFont (Fonts::caps (16.0f, 0.26f));
-    g.drawText ("MODE", Rectangle<float> (48.0f, 118.0f, 300.0f, 20.0f), Justification::centredLeft, false);
-    g.drawText ("GRAINS", Rectangle<float> (66.0f, 326.0f, 300.0f, 18.0f), Justification::centredLeft, false);
-    g.drawText ("TEXTURE", Rectangle<float> (66.0f + 4.0f * 135.25f, 326.0f, 300.0f, 18.0f), Justification::centredLeft, false);
-    g.drawText ("GRAIN CHARACTER", Rectangle<float> (56.0f, 580.0f, 280.0f, 18.0f), Justification::centredLeft, false);
-    g.drawText ("MOTION", Rectangle<float> (374.0f, 580.0f, 300.0f, 18.0f), Justification::centredLeft, false);
-    g.drawText ("TEMPO & SCALE", Rectangle<float> (898.0f, 580.0f, 230.0f, 18.0f), Justification::centredLeft, false);
+    g.drawText ("DROPLETS", Rectangle<float> (66.0f, 286.0f, 300.0f, 18.0f), Justification::centredLeft, false);
+    g.drawText ("TEXTURE", Rectangle<float> (66.0f + 4.0f * 135.25f, 286.0f, 300.0f, 18.0f), Justification::centredLeft, false);
+    g.drawText ("DROPLET CHARACTER", Rectangle<float> (56.0f, 540.0f, 280.0f, 18.0f), Justification::centredLeft, false);
+    g.drawText ("MOTION", Rectangle<float> (374.0f, 540.0f, 300.0f, 18.0f), Justification::centredLeft, false);
+    g.drawText ("TEMPO & SCALE", Rectangle<float> (898.0f, 540.0f, 230.0f, 18.0f), Justification::centredLeft, false);
 }
 
 void SkyBackground::drawStars (Graphics& g, float, float)
@@ -348,15 +347,16 @@ void SkyBackground::drawStars (Graphics& g, float, float)
     {
         const auto& s = stars[i];
         const float tw = 0.75f + 0.25f * std::sin (time * s.speed + s.twinkle);
-        const float r = s.radius * (1.0f + 0.35f * storm);
-        const float glow = storm * (s.radius > 1.0f ? 1.0f : 0.45f);
+        const float r = s.radius * (1.0f + 0.6f * storm);
+        const float glow = std::min (1.0f, storm * 1.4f * (s.radius > 1.0f ? 1.0f : 0.6f));
         if (glow > 0.02f)
         {
-            g.setOpacity (glow * tw * s.alpha);
-            g.drawImage (starGlow, Rectangle<float> (r * 14.0f, r * 14.0f).withCentre ({ s.x, s.y }));
+            const float glowSize = r * (14.0f + 12.0f * storm);
+            g.setOpacity (glow * tw * std::min (1.0f, s.alpha * 1.5f));
+            g.drawImage (starGlow, Rectangle<float> (glowSize, glowSize).withCentre ({ s.x, s.y }));
             g.setOpacity (1.0f);
         }
-        g.setColour (Colour (236, 240, 255).withAlpha (std::min (1.0f, s.alpha * tw * (1.0f + 0.7f * storm))));
+        g.setColour (Colour (236, 240, 255).withAlpha (std::min (1.0f, s.alpha * tw * (1.0f + 1.5f * storm) + 0.25f * storm)));
         g.fillEllipse (Rectangle<float> (r * 2.0f, r * 2.0f).withCentre ({ s.x, s.y }));
     }
 }

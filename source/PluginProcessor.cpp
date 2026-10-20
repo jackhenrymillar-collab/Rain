@@ -29,7 +29,6 @@ RainProcessor::RainProcessor()
     autoGain    = state.getRawParameterValue (ParamID::autoGain);
     inputGain   = state.getRawParameterValue (ParamID::inputGain);
     outputGain  = state.getRawParameterValue (ParamID::outputGain);
-    mode        = state.getRawParameterValue (ParamID::mode);
     sync        = state.getRawParameterValue (ParamID::sync);
     syncRate    = state.getRawParameterValue (ParamID::syncRate);
     scale       = state.getRawParameterValue (ParamID::scale);
@@ -44,8 +43,21 @@ RainProcessor::RainProcessor()
     modTarget   = { state.getRawParameterValue (ParamID::mod1Target), state.getRawParameterValue (ParamID::mod2Target) };
 }
 
+int RainProcessor::getCurrentProgram()
+{
+    const int factory = presets.currentFactoryIndex();
+    return factory >= 0 ? factory : presets.numFactory();
+}
+
+const juce::String RainProcessor::getProgramName (int index)
+{
+    return index == presets.numFactory() ? juce::String ("User preset") : presets.factoryName (index);
+}
+
 void RainProcessor::setCurrentProgram (int index)
 {
+    if (! juce::isPositiveAndBelow (index, presets.numFactory()))
+        return; // the "User preset" entry: nothing to load
     // Some hosts re-send the current program when restoring a session; don't let that
     // undo edits made on top of it.
     if (index == presets.currentFactoryIndex() && presets.isModified())
@@ -55,19 +67,21 @@ void RainProcessor::setCurrentProgram (int index)
 
 bool RainProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    // Mono-in/stereo-out and stereo/stereo.
+    // Stereo/stereo, mono in to stereo out (the input is used on both sides) and
+    // mono/mono (Rain runs in stereo and sums its output). Nothing wider.
     const auto in = layouts.getMainInputChannelSet();
     const auto out = layouts.getMainOutputChannelSet();
-    return out == juce::AudioChannelSet::stereo()
-        && (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo());
+    const auto mono = juce::AudioChannelSet::mono(), stereo = juce::AudioChannelSet::stereo();
+    return (out == stereo && (in == mono || in == stereo)) || (out == mono && in == mono);
 }
 
 void RainProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     engine.setParams (readParams());
     engine.prepare (sampleRate, juce::jmax (1, samplesPerBlock));
-    engineLatency = engine.latencySamples();
-    setLatencySamples (engineLatency);
+    // The same in every quality, so it only changes here.
+    setLatencySamples (engine.latencySamples());
+    monoRight.assign (static_cast<std::size_t> (juce::jmax (512, samplesPerBlock)), 0.0f);
 }
 
 void RainProcessor::reset()
@@ -97,7 +111,6 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.autoGain = autoGain->load() > 0.5f;
     p.inputGainDb = inputGain->load();
     p.outputGainDb = outputGain->load();
-    p.mode = mode->load() > 0.5f ? dsp::Mode::delay : dsp::Mode::grains;
     p.sync = sync->load() > 0.5f;
     p.syncDivision = juce::jlimit (0, static_cast<int> (dsp::kSyncDivisionBeats.size()) - 1, static_cast<int> (syncRate->load()));
     p.scale = static_cast<dsp::Scale> (juce::jlimit (0, dsp::kNumScales - 1, static_cast<int> (scale->load())));
@@ -145,19 +158,27 @@ void RainProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBu
         }
     engine.setTransport (bpm, ppq, playing);
 
-    engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), numSamples);
-
-    // Changing quality changes Beads' internal rate, and with it the latency.
-    if (engine.latencySamples() != engineLatency.load())
-    {
-        engineLatency = engine.latencySamples();
-        triggerAsyncUpdate();
-    }
+    if (buffer.getNumChannels() > 1)
+        engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), numSamples);
+    else
+        processMonoOut (buffer, numSamples);
 }
 
-void RainProcessor::handleAsyncUpdate()
+void RainProcessor::processMonoOut (juce::AudioBuffer<float>& buffer, int numSamples)
 {
-    setLatencySamples (engineLatency.load());
+    // A mono track: run in stereo with the input on both sides, in pieces the size of
+    // the preallocated right channel (hosts may send bigger blocks than they said),
+    // then sum to mono.
+    auto* left = buffer.getWritePointer (0);
+    const int chunk = static_cast<int> (monoRight.size());
+    for (int start = 0; start < numSamples; start += chunk)
+    {
+        const int n = juce::jmin (chunk, numSamples - start);
+        std::copy (left + start, left + start + n, monoRight.begin());
+        engine.process (left + start, monoRight.data(), n);
+        for (int i = 0; i < n; ++i)
+            left[start + i] = 0.5f * (left[start + i] + monoRight[static_cast<std::size_t> (i)]);
+    }
 }
 
 juce::AudioProcessorEditor* RainProcessor::createEditor()
@@ -168,6 +189,7 @@ juce::AudioProcessorEditor* RainProcessor::createEditor()
 void RainProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto copy = state.copyState();
+    copy.setProperty ("stateVersion", kStateVersion, nullptr);
     presets.writeToState (copy);
     if (auto xml = copy.createXml())
         copyXmlToBinary (*xml, destData);
@@ -178,7 +200,25 @@ void RainProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (state.state.getType()))
         {
-            const auto restored = juce::ValueTree::fromXml (*xml);
+            auto restored = juce::ValueTree::fromXml (*xml);
+
+            // Sessions from other versions: drop parameters Rain no longer has (such as
+            // the old Grains/Delay mode), and give any it has gained their defaults
+            // rather than leaving whatever the plugin happened to be set to.
+            for (int i = restored.getNumChildren(); --i >= 0;)
+            {
+                const auto child = restored.getChild (i);
+                if (child.hasType ("PARAM") && state.getParameter (child.getProperty ("id").toString()) == nullptr)
+                    restored.removeChild (i, nullptr);
+            }
+            for (auto* param : getParameters())
+                if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param))
+                    if (! restored.getChildWithProperty ("id", ranged->paramID).isValid())
+                        restored.appendChild (juce::ValueTree ("PARAM", { { "id", ranged->paramID },
+                                                                          { "value", ranged->convertFrom0to1 (ranged->getDefaultValue()) } }),
+                                              nullptr);
+            restored.removeProperty ("stateVersion", nullptr);
+
             state.replaceState (restored);
 
             // replaceState skips parameters whose stored value already reads the same

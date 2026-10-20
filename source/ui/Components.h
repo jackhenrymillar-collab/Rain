@@ -18,6 +18,8 @@ public:
 
     void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
                            float sliderPos, float startAngle, float endAngle, juce::Slider&) override;
+    void drawModRing (juce::Graphics&, juce::Slider&, juce::Rectangle<float> bounds, float size, bool small,
+                      float startAngle, float endAngle, float angle);
 
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
                                bool highlighted, bool down) override;
@@ -87,6 +89,26 @@ public:
 private:
     std::array<float, 48> history {};
     std::size_t head = 0;
+};
+
+// A slim horizontal peak meter, -48 to 0 dBFS, with a gold band marking the range
+// to aim for. Anything past the band shows in coral.
+class LevelMeter final : public juce::Component,
+                         public juce::SettableTooltipClient
+{
+public:
+    LevelMeter (float zoneLowDb, float zoneHighDb);
+    // A new peak reading (linear), dt seconds after the last one.
+    void push (float peak, float dt);
+    void paint (juce::Graphics&) override;
+
+    static constexpr float kFloorDb = -48.0f;
+
+private:
+    float xFor (float db, juce::Rectangle<float> area) const;
+
+    float zoneLow, zoneHigh;
+    float levelDb = kFloorDb, holdDb = kFloorDb, holdTime = 0.0f;
 };
 
 // An invisible switch over the moon: click to bypass Rain.

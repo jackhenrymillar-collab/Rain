@@ -68,6 +68,7 @@ void Processor::Init(
   wow_and_flutter_.set_lp(0.6f);
 #endif  // ENABLE_HARDWARE_24K
 
+  media_ = MEDIA_DIGITAL;  // Rain: Configure reads the outgoing media
   Configure(MEDIA_DIGITAL, false);
   
   // Used for the timing of the delay to granular transition.
@@ -78,6 +79,9 @@ void Processor::Configure(Media media, bool mono) {
   if (media == MEDIA_STUDIO && !has_studio_) {
     media = MEDIA_DIGITAL;
   }
+  // Rain: the dry level passed by the reverb in use, handed on below.
+  const float reverb_dry = media_ == MEDIA_STUDIO ? reverb_studio_.dry_level()
+                                                   : reverb_.dry_level();
   media_ = media;
   mono_ = mono;
   
@@ -112,11 +116,60 @@ void Processor::Configure(Media media, bool mono) {
   trigger_generator_.Init(sr);
   delay_controller_.Init(sr, max_delay * (mono ? 2 : 1));
   reverb_.Reset(sr);
+  reverb_.set_dry_level(reverb_dry);
   if (has_studio_) {
     reverb_studio_.Reset(sr);
+    reverb_studio_.set_dry_level(reverb_dry);
   }
   std::fill(&soften_state_[0][0], &soften_state_[0][0] + 8, 0.0f);
 }
+
+// Rain: carrying the recording across a change of quality.
+#define RAIN_FOR_MEDIA(expr_of_p) \
+  switch (media_) { \
+    case MEDIA_DIRTY_TAPE: { auto& p = processor_dirty_tape_; expr_of_p; } break; \
+    case MEDIA_CLEAN_TAPE: { auto& p = processor_clean_tape_; expr_of_p; } break; \
+    case MEDIA_VINTAGE_DIGITAL: { auto& p = processor_vintage_digital_; expr_of_p; } break; \
+    case MEDIA_STUDIO: { auto& p = processor_studio_; expr_of_p; } break; \
+    case MEDIA_DIGITAL: default: { auto& p = processor_digital_; expr_of_p; } break; \
+  }
+
+int Processor::history_capacity() const {
+  int n = 0;
+  RAIN_FOR_MEDIA(n = p.history_capacity());
+  return n;
+}
+
+int Processor::HistoryCapacityFor(Media media) {
+  switch (media) {
+    case MEDIA_DIRTY_TAPE: return decltype(processor_dirty_tape_)::history_capacity();
+    case MEDIA_CLEAN_TAPE: return decltype(processor_clean_tape_)::history_capacity();
+    case MEDIA_VINTAGE_DIGITAL: return decltype(processor_vintage_digital_)::history_capacity();
+    case MEDIA_STUDIO: return decltype(processor_studio_)::history_capacity();
+    case MEDIA_DIGITAL: default: return decltype(processor_digital_)::history_capacity();
+  }
+}
+
+int Processor::history_length() const {
+  int n = 0;
+  RAIN_FOR_MEDIA(n = p.history_length());
+  return n;
+}
+
+void Processor::ExportHistory(FloatFrame* newest_first, int first_age, int count) const {
+  RAIN_FOR_MEDIA(p.ExportHistory(newest_first, first_age, count));
+}
+
+void Processor::BeginImport() {
+  RAIN_FOR_MEDIA(p.Trim(false));
+}
+
+void Processor::ImportHistory(const FloatFrame* oldest_first, int count) {
+  RAIN_FOR_MEDIA(
+      for (int k = 0; k < count; ++k) { p.ImportFrame(oldest_first[k]); });
+}
+
+#undef RAIN_FOR_MEDIA
 
 // Rain: SOFTEN. A little saturation rounds the grains' peaks, then a gentle
 // 12 dB/octave low-pass (16 kHz down to about 2.5 kHz) takes the edge off bright

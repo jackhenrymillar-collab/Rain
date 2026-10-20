@@ -27,7 +27,6 @@ namespace ParamID
     inline constexpr auto autoGain    = "autogain";
     inline constexpr auto inputGain   = "inputgain";
     inline constexpr auto outputGain  = "outputgain";
-    inline constexpr auto mode        = "mode";
     inline constexpr auto sync        = "sync";
     inline constexpr auto syncRate    = "syncrate";
     inline constexpr auto scale       = "scale";
@@ -47,7 +46,6 @@ namespace ParamID
 
 // Must match dsp::Quality (Studio was added last; the panel shows it first).
 juce::StringArray qualityNames();
-juce::StringArray modeNames();      // dsp::Mode
 juce::StringArray syncRateNames();  // dsp::kSyncDivisionBeats
 juce::StringArray scaleNames();     // dsp::Scale
 juce::StringArray modTargetNames(); // dsp::ModTarget

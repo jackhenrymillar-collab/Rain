@@ -29,6 +29,8 @@
 #ifndef BEADS_DSP_GRANULAR_PROCESSOR_H_
 #define BEADS_DSP_GRANULAR_PROCESSOR_H_
 
+#include <algorithm>
+
 #include "stmlib/stmlib.h"
 #include "stmlib/dsp/filter.h"
 #include "stmlib/dsp/parameter_interpolator.h"
@@ -108,6 +110,27 @@ class GranularProcessor {
         : stereo_delay_line_.remaining();
   }
   
+  // Rain: copy the stereo recording out, newest frame first, and write frames
+  // back in, oldest first, so a change of quality keeps what was recorded. Both
+  // work in pieces so the copy can be spread over several audio callbacks.
+  inline int history_length() const {
+    return std::min(stereo_delay_line_.duration(), int(max_delay));
+  }
+
+  inline void ExportHistory(FloatFrame* newest_first, int first_age, int count) const {
+    for (int k = 0; k < count; ++k) {
+      newest_first[k] = stereo_delay_line_.History(first_age + k);
+    }
+  }
+
+  inline void ImportFrame(FloatFrame f) {
+    stereo_delay_line_.Write(f);
+  }
+
+  static inline int history_capacity() {
+    return max_delay;
+  }
+
   inline uint8_t* delay_buffer_raw_bytes(bool mono, size_t offset) {
     // Independently of the stereo/mono setting, we're writing in the same
     // bytes anyway!

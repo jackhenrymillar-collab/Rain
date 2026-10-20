@@ -35,8 +35,17 @@ The files are unchanged from upstream, except that:
     `granular_processor.h` takes the bank size as a template argument.
   - `granular_player.h` (`Parameters`), `delay_granular_player.h` and
     `delay_grain.h` add the grain options `clean_reader` (band-limited reading),
-    `formant` (PSOLA pitch shifting), `phase_align` and `pitch_glide`.
+    `formant` (PSOLA pitch shifting on tracked pitch marks, slices in step with
+    the previous grain), `phase_align` and `pitch_glide`.
   - `rain_sinc.h` is new (Rain's own): the band-limited interpolation tables.
+  - `delay_line.h` (`History`), `granular_processor.h` and `processor.h/.cc`
+    (`ExportHistory`, `BeginImport`, `ImportHistory`, `history_rate`,
+    `HistoryRateFor`, `HistoryCapacityFor`) let Rain copy the recording out and back
+    in, in slices, so it survives a change of quality. `fx/reverb.h`
+    (`dry_level`) and `Processor::Configure` hand the reverb's direct level on, so
+    the dry signal doesn't dip when quality changes.
+  - `granular_player.h` (`new_grain`) starts a new grain on a voice that has
+    finished, when there is one, rather than cutting off a voice still fading out.
 
 ## License
 

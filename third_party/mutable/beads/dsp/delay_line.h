@@ -392,6 +392,12 @@ class DelayLine {
     return value;
   }
   
+  // Rain: the frame written `age` frames ago (0 is the newest), so the recording
+  // can be carried across a change of quality.
+  inline FloatFrame History(int age) const {
+    return Load((write_ptr_ + 1 + age) % max_delay);
+  }
+
   // Rain: band-limited read (windowed sinc from a polyphase table, see
   // rain_sinc.h). Same position convention as the Hermite read: the value at
   // delay_integral + delay_fractional samples back.

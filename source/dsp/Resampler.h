@@ -67,6 +67,13 @@ public:
         std::fill (history.begin(), history.end(), beads::FloatFrame { 0.0f, 0.0f });
     }
 
+    // Reset as if x had been coming in for ever (so a steady signal carries on).
+    void resetTo (const beads::FloatFrame& x) noexcept
+    {
+        reset();
+        std::fill (history.begin(), history.end(), x);
+    }
+
     // Delay in input samples.
     double delay() const noexcept { return bypass ? 0.0 : taps / 2; }
 

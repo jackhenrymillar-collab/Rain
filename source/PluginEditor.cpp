@@ -11,19 +11,17 @@ namespace Theme = ui::Theme;
 
 namespace
 {
-    struct ModeInfo
-    {
-        const char* title;
-        const char* description;
-    };
-
-    // Matches modeNames() and dsp::Mode.
-    constexpr ModeInfo kModes[] = {
-        { "Grains", "Short slices of the buffer, scattered and layered into a cloud." },
-        { "Delay", "Echoes from the buffer. DENSITY sets the delay, FEEDBACK the repeats." },
-    };
-
     // Tooltips for the quality chips (matches qualityNames() and dsp::Quality).
+    constexpr const char* kScaleTips[] = {
+        "Scale: Off. Pitch is free, so PITCH, PITCH RANDOM and modulation glide smoothly",
+        "Scale: Chromatic. Droplet pitch snaps to semitones",
+        "Scale: Major. Droplet pitch stays in a major scale",
+        "Scale: Minor. Droplet pitch stays in a natural minor scale",
+        "Scale: Pentatonic. Five notes of the major scale, nothing clashes",
+        "Scale: Minor pentatonic. Five notes of the minor scale, nothing clashes",
+        "Scale: Fifths. Only roots and fifths, for open, drone-like layers",
+        "Scale: Octaves. Only octaves of the source pitch",
+    };
     constexpr const char* kQualityTips[] = {
         "Crisp and clean, like the module. 48 kHz, 16-bit, 4 s buffer, bright reverb.",
         "Early sampler grit. 32 kHz, 12-bit, 8 s buffer, a little darker.",
@@ -60,8 +58,8 @@ RainEditor::RainEditor (RainProcessor& p)
     : AudioProcessorEditor (p),
       processor (p),
       state (p.getState()),
-      presetBar (p.getPresets()),
-      grainDisplay (p.getState(), p.getMonitor())
+      grainDisplay (p.getState(), p.getMonitor()),
+      presetBar (p.getPresets())
 {
     content.setLookAndFeel (&lookAndFeel);
     tooltips.setLookAndFeel (&lookAndFeel);
@@ -69,39 +67,12 @@ RainEditor::RainEditor (RainProcessor& p)
     content.addAndMakeVisible (sky);
     moon = std::make_unique<ui::MoonSwitch> (state, ParamID::bypass);
     content.addAndMakeVisible (*moon);
+
     content.addAndMakeVisible (presetBar);
     content.addAndMakeVisible (saveButton);
     saveButton.getProperties().set ("pill", true);
     saveButton.setTooltip ("Save the current sound as a preset");
     saveButton.onClick = [this] { presetBar.showSaveDialog(); };
-
-    // Mode title, description and switch.
-    modeTitle.setFont (Fonts::serif (70.0f));
-    modeTitle.setColour (Label::textColourId, Theme::text);
-    modeTitle.setBorderSize ({});
-    modeDescription.setFont (Fonts::sans (21.0f));
-    modeDescription.setColour (Label::textColourId, Theme::textSoft);
-    modeDescription.setBorderSize ({});
-    modeDescription.setMinimumHorizontalScale (0.85f);
-    for (auto* l : { &modeTitle, &modeDescription })
-    {
-        l->setInterceptsMouseClicks (false, false);
-        content.addAndMakeVisible (*l);
-    }
-    const auto modes = modeNames();
-    for (int i = 0; i < 2; ++i)
-    {
-        auto& chip = modeChips[static_cast<size_t> (i)];
-        chip.setButtonText (modes[i]);
-        chip.onClick = [this, i] {
-            if (modeAttachment != nullptr)
-                modeAttachment->setValueAsCompleteGesture (static_cast<float> (i));
-        };
-        content.addAndMakeVisible (chip);
-    }
-    modeChips[0].setTooltip ("Grains: Beads' granular mode");
-    modeChips[1].setTooltip ("Delay: Beads' delay mode (SIZE fully clockwise on the module)");
-    modeAttachment = std::make_unique<ParameterAttachment> (*state.getParameter (ParamID::mode), [this] (float v) { showMode (roundToInt (v)); });
 
     content.addAndMakeVisible (grainDisplay);
 
@@ -127,9 +98,9 @@ RainEditor::RainEditor (RainProcessor& p)
 
     // Grain character: how each grain sounds and where it sits.
     const std::tuple<const char*, const char*, const char*> character[] = {
-        { ParamID::reverse, "REVERSE", "Chance each grain plays backwards" },
-        { ParamID::soften, "SOFTEN", "Rounds off the highs and lows of the grains, leaving the dry signal alone" },
-        { ParamID::randomPan, "RANDOM PAN", "Places each grain at a random point in the stereo field" },
+        { ParamID::reverse, "REVERSE", "Chance each droplet plays backwards" },
+        { ParamID::soften, "SOFTEN", "Rounds off the highs and lows of the droplets, leaving the dry signal alone" },
+        { ParamID::randomPan, "RANDOM PAN", "Places each droplet at a random point in the stereo field" },
     };
     for (const auto& [id, name, tip] : character)
     {
@@ -138,14 +109,15 @@ RainEditor::RainEditor (RainProcessor& p)
         content.addAndMakeVisible (*characterKnobs.back());
     }
 
-    // Overlap: SIZE sets how many grains overlap, and their length follows DENSITY.
-    overlapButton.setTooltip ("SIZE sets how many grains overlap; their length follows DENSITY and the tempo, so the cloud stays smooth");
+    // Overlap: grains keep their length, and come often enough to overlap.
+    overlapButton.setTooltip ("Overlap: fills the gaps. When droplets are sparse they come more often, so each one overlaps the next. Droplet length stays as SIZE sets it");
     content.addAndMakeVisible (overlapButton);
-    formantButton.setTooltip ("Pitched grains keep their tone colour, so voices don't go chipmunk or monster");
+    formantButton.setTooltip ("Formant: pitched droplets keep the tone colour of the source, so voices don't go chipmunk going up or monster going down");
 
     // Motion.
     const char* modNames[] = { "WAVE", "DRIFT" };
-    const char* modTips[] = { "A slow sine wave", "Smooth random drift" };
+    const char* modTips[] = { "Wave: a slow sine wave. RATE sets its speed, DEPTH how far it moves the control chosen on the right",
+                              "Drift: smooth random wandering. RATE sets its speed, DEPTH how far it moves the control chosen on the right" };
     const char* rateIds[] = { ParamID::mod1Rate, ParamID::mod2Rate };
     const char* depthIds[] = { ParamID::mod1Depth, ParamID::mod2Depth };
     const char* targetIds[] = { ParamID::mod1Target, ParamID::mod2Target };
@@ -159,7 +131,7 @@ RainEditor::RainEditor (RainProcessor& p)
         row.rate = std::make_unique<ui::OrbKnob> (state, rateIds[m], "RATE", ui::OrbKnob::Size::small);
         row.depth = std::make_unique<ui::OrbKnob> (state, depthIds[m], "DEPTH", ui::OrbKnob::Size::small);
         row.target = std::make_unique<ui::ChoiceBox> (state, targetIds[m]);
-        row.target->getBox().setTooltip ("What this modulator moves");
+        row.target->getBox().setTooltip ("The control this modulator moves");
         content.addAndMakeVisible (row.name);
         content.addAndMakeVisible (row.scope);
         content.addAndMakeVisible (*row.rate);
@@ -170,9 +142,9 @@ RainEditor::RainEditor (RainProcessor& p)
     // Tempo and scale.
     syncRate = std::make_unique<ui::ChoiceBox> (state, ParamID::syncRate);
     scale = std::make_unique<ui::ChoiceBox> (state, ParamID::scale);
-    syncButton.setTooltip ("Fire grains from the host tempo: DENSITY divides the clock, TIME snaps to clock steps");
+    syncButton.setTooltip ("Sync: fire droplets from the host tempo. DENSITY divides the clock and TIME snaps to clock steps");
     syncRate->getBox().setTooltip ("Clock note length");
-    scale->getBox().setTooltip ("Keep grain pitch, PITCH RANDOM and modulation in a scale");
+    scale->getBox().setTooltip ("Keep droplet pitch, PITCH RANDOM and modulation in a scale");
     styleCaps (scaleLabel, 17.0f).setText ("SCALE", dontSendNotification);
     scaleLabel.setColour (Label::textColourId, Theme::textSoft);
     for (auto* l : { &tempoReadout, &scaleReadout })
@@ -193,6 +165,9 @@ RainEditor::RainEditor (RainProcessor& p)
     styleCaps (qualityLabel).setText ("QUALITY", dontSendNotification);
     qualityLabel.setJustificationType (Justification::centredRight);
     content.addAndMakeVisible (qualityLabel);
+    styleCaps (presetLabel).setText ("PRESET", dontSendNotification);
+    presetLabel.setJustificationType (Justification::centredRight);
+    content.addAndMakeVisible (presetLabel);
     const auto names = qualityNames();
     for (int i = 0; i < 5; ++i)
     {
@@ -225,10 +200,14 @@ RainEditor::RainEditor (RainProcessor& p)
         b->getProperties().set ("pill", true);
         content.addAndMakeVisible (*b);
     }
-    freezeButton.setTooltip ("Stop recording; grains keep playing the held buffer");
-    seedButton.setTooltip ("Hold to play grains (when SEED LOCK is off)");
-    seedLockButton.setTooltip ("On: grains run on their own. Off: grains play only while SEED is held");
-    autoGainButton.setTooltip ("Set the input level automatically");
+    freezeButton.setTooltip ("Freeze: stop recording and hold the buffer. Droplets keep playing what's held");
+    seedButton.setTooltip ("Seed: hold to play droplets while SEED LOCK is off");
+    seedLockButton.setTooltip ("Seed Lock: on, droplets run on their own. Off, droplets play only while SEED is held");
+    autoGainButton.setTooltip ("Auto: set the input level automatically, so peaks land in the meter's gold band");
+    content.addAndMakeVisible (inputMeter);
+    content.addAndMakeVisible (outputMeter);
+    inputMeter.setTooltip ("Input level reaching the buffer. Aim for peaks in the gold band");
+    outputMeter.setTooltip ("Output level. Peaks ideally sit in the gold band, below -1 dB");
 
     // SEED is momentary: the parameter is on only while the button is held.
     seedAttachment = std::make_unique<ParameterAttachment> (*state.getParameter (ParamID::seed), [] (float) {});
@@ -249,7 +228,6 @@ RainEditor::RainEditor (RainProcessor& p)
         }
     };
 
-    modeAttachment->sendInitialUpdate();
     qualityAttachment->sendInitialUpdate();
 
     setResizable (true, true);
@@ -268,28 +246,14 @@ RainEditor::RainEditor (RainProcessor& p)
 RainEditor::~RainEditor()
 {
     stopTimer();
+    // Closing the window while SEED is held lets it go.
+    if (seedHeld)
+    {
+        seedAttachment->setValueAsPartOfGesture (0.0f);
+        seedAttachment->endGesture();
+    }
     tooltips.setLookAndFeel (nullptr);
     content.setLookAndFeel (nullptr);
-}
-
-void RainEditor::showMode (int index)
-{
-    index = jlimit (0, 1, index);
-    for (int i = 0; i < 2; ++i)
-        modeChips[static_cast<size_t> (i)].setToggleState (i == index, dontSendNotification);
-    modeTitle.setText (kModes[index].title, dontSendNotification);
-    modeDescription.setText (kModes[index].description, dontSendNotification);
-
-    // SIZE, REVERSE, OVERLAP and FORMANT do nothing in delay mode.
-    const bool delay = index == 1;
-    knobs[1]->setAlpha (delay ? 0.4f : 1.0f);
-    smallKnobs[1]->setAlpha (delay ? 0.4f : 1.0f);
-    characterKnobs[0]->setAlpha (delay ? 0.4f : 1.0f);
-    characterKnobs[2]->setAlpha (delay ? 0.4f : 1.0f);
-    overlapButton.setAlpha (delay ? 0.4f : 1.0f);
-    formantButton.setAlpha (delay ? 0.4f : 1.0f);
-    knobs[1]->getSlider().setTooltip (delay ? "SIZE has no effect in Delay mode" : String());
-    knobs[0]->getSlider().setTooltip (delay ? "In Delay mode, TIME picks which slice loops while FROZEN" : String());
 }
 
 void RainEditor::showQuality (int index)
@@ -305,7 +269,6 @@ void RainEditor::updateLiveValues()
     auto value = [this] (const char* id) { return state.getRawParameterValue (id)->load(); };
 
     const bool sync = value (ParamID::sync) > 0.5f;
-    const bool delay = value (ParamID::mode) > 0.5f;
     const int rateIndex = jlimit (0, 5, static_cast<int> (value (ParamID::syncRate)));
 
     // Modulation rings on the large knobs.
@@ -315,7 +278,7 @@ void RainEditor::updateLiveValues()
     {
         const int t = static_cast<int> (kKnobTargets[i]);
         bool moved = (targets[0] == t && std::abs (depths[0]) > 0.05f) || (targets[1] == t && std::abs (depths[1]) > 0.05f);
-        if (kKnobTargets[i] == dsp::ModTarget::time && sync && ! delay)
+        if (kKnobTargets[i] == dsp::ModTarget::time && sync)
             moved = true; // TIME snaps to clock steps
         knobs[i]->setModulated (moved ? mon.effective[static_cast<size_t> (t)].load() : -1.0f);
     }
@@ -324,28 +287,28 @@ void RainEditor::updateLiveValues()
     const float effectiveTime = mon.effective[static_cast<size_t> (dsp::ModTarget::time)].load();
     const float effectiveDensity = mon.effective[static_cast<size_t> (dsp::ModTarget::density)].load();
     const float density = value (ParamID::density) * 0.01f;
-    knobs[4]->setValueOverride (delay ? ui::GrainDisplay::delayText (density, mon.bufferSeconds.load(), sync, mon.bpm.load(), rateIndex)
-                                : sync ? ui::GrainDisplay::syncDensityText (density, rateIndex) : String());
-    knobs[0]->setValueOverride (sync && ! delay ? ui::GrainDisplay::syncTimeText (effectiveTime, mon.bufferSeconds.load(), mon.bpm.load(), rateIndex) : String());
+    knobs[4]->setValueOverride (sync ? ui::GrainDisplay::syncDensityText (density, rateIndex) : String());
+    knobs[0]->setValueOverride (sync ? ui::GrainDisplay::syncTimeText (effectiveTime, mon.bufferSeconds.load(), mon.bpm.load(), rateIndex) : String());
     ignoreUnused (effectiveDensity);
-    // In Overlap mode SIZE reads as how many grains overlap.
-    knobs[1]->setValueOverride (value (ParamID::overlap) > 0.5f && ! delay
-        ? String (dsp::RainEngine::overlapAmount (mon.effective[static_cast<size_t> (dsp::ModTarget::size)].load()), 1) + String::fromUTF8 ("\u00d7 overlap")
-        : String());
-
     for (size_t m = 0; m < 2; ++m)
         modRows[m].scope.push (mon.modValue[m].load());
 
     const String tempo = sync ? "Locked to " + String (roundToInt (mon.bpm.load())) + " BPM"
-                              : String (delay ? "Delay runs free" : "Grains run free");
+                              : String ("Droplets run free");
     if (tempoReadout.getText() != tempo)
     {
         tempoReadout.setText (tempo, dontSendNotification);
         syncRate->getBox().setTooltip ("Clock note length. " + tempo);
     }
-    const String scaleText = value (ParamID::scale) > 0.5f ? "Grains stay in key" : "Pitch is free";
+    const String scaleText = value (ParamID::scale) > 0.5f ? "Droplets stay in key" : "Pitch is free";
     if (scaleReadout.getText() != scaleText)
         scaleReadout.setText (scaleText, dontSendNotification);
+    const int scaleIndex = jlimit (0, static_cast<int> (std::size (kScaleTips)) - 1, roundToInt (value (ParamID::scale)));
+    if (scale->getBox().getTooltip() != kScaleTips[scaleIndex])
+        scale->getBox().setTooltip (kScaleTips[scaleIndex]);
+    const String syncTip = String ("Sync: fire droplets from the host tempo. DENSITY divides the clock and TIME snaps to clock steps. ") + tempo;
+    if (syncButton.getTooltip() != syncTip)
+        syncButton.setTooltip (syncTip);
     syncRate->setAlpha (sync ? 1.0f : 0.5f);
 }
 
@@ -365,6 +328,9 @@ void RainEditor::tick()
     sky.setBypassed (moon->isOn());
     sky.advance (dt);
     grainDisplay.advance (dt);
+    auto& monitor = processor.getMonitor();
+    inputMeter.push (monitor.inputPeak.exchange (0.0f, std::memory_order_relaxed), static_cast<float> (dt));
+    outputMeter.push (monitor.outputPeak.exchange (0.0f, std::memory_order_relaxed), static_cast<float> (dt));
     presetBar.refresh();
     updateLiveValues();
 }
@@ -380,30 +346,24 @@ void RainEditor::layoutContent()
 {
     sky.setBounds (content.getLocalBounds());
     moon->setBounds (ui::SkyBackground::moonBounds().toNearestInt());
-    presetBar.setBounds (330, 32, 470, 56);
-    saveButton.setBounds (812, 41, 92, 38);
 
-    // Mode.
-    modeTitle.setBounds (kLeft, 138, 520, 68);
-    modeDescription.setBounds (kLeft, 210, 530, 28);
-    for (int i = 0; i < 2; ++i)
-        modeChips[static_cast<size_t> (i)].setBounds (kLeft + i * 142, 252, 130, 44);
-    overlapButton.setBounds (kLeft + 2 * 142 + 18, 255, 128, 38);
-    formantButton.setBounds (kLeft + 2 * 142 + 18 + 138, 255, 128, 38);
-    grainDisplay.setBounds (635, 141, 447, 150); // 85% of the original 526 x 176, same centre
+    grainDisplay.setBounds ((Theme::designWidth - 600) / 2, 70, 600, 200); // centred on the panel
 
     // Knob rows.
     for (size_t i = 0; i < knobs.size(); ++i)
-        knobs[i]->setBounds (columnX (static_cast<int> (i)), 350, kColumnWidth, 152);
-    for (size_t i = 0; i < smallKnobs.size(); ++i)
-        smallKnobs[i]->setBounds (columnX (static_cast<int> (i)), 514, kColumnWidth, 54);
-    autoGainButton.setBounds (columnX (6) + (kColumnWidth - 96) / 2, 522, 96, 38);
+        knobs[i]->setBounds (columnX (static_cast<int> (i)), 310, kColumnWidth, 152);
+    for (size_t i = 0; i < 4; ++i)
+        smallKnobs[i]->setBounds (columnX (static_cast<int> (i)), 474, kColumnWidth, 54);
+
+    // Droplet switches, beside the RANDOM knobs.
+    overlapButton.setBounds (columnX (4) + (kColumnWidth - 128) / 2, 482, 128, 38);
+    formantButton.setBounds (columnX (5) + (kColumnWidth - 128) / 2, 482, 128, 38);
 
     // Motion rows.
     for (size_t m = 0; m < 2; ++m)
     {
         auto& row = modRows[m];
-        const int y = 614 + static_cast<int> (m) * 58;
+        const int y = 574 + static_cast<int> (m) * 58;
         constexpr int x = 318; // the Motion panel sits right of Grain Character
         row.name.setBounds (x + 56, y, 68, 54);
         row.scope.setBounds (x + 120, y + 9, 52, 36);
@@ -414,24 +374,34 @@ void RainEditor::layoutContent()
 
     // Grain character.
     for (size_t i = 0; i < characterKnobs.size(); ++i)
-        characterKnobs[i]->setBounds (46 + static_cast<int> (i) * 96, 612, 96, 116);
+        characterKnobs[i]->setBounds (46 + static_cast<int> (i) * 96, 572, 96, 116);
 
     // Tempo and scale. (The tempo and scale states show as tooltips; there's no
     // room for the readouts beside them.)
-    syncButton.setBounds (896, 622, 100, 38);
-    syncRate->setBounds (1006, 622, 110, 38);
-    scaleLabel.setBounds (900, 680, 80, 38);
-    scale->setBounds (986, 680, 130, 38);
+    syncButton.setBounds (896, 582, 100, 38);
+    syncRate->setBounds (1006, 582, 110, 38);
+    scaleLabel.setBounds (900, 640, 80, 38);
+    scale->setBounds (986, 640, 130, 38);
     tempoReadout.setVisible (false);
     scaleReadout.setVisible (false);
 
     // Footer.
-    freezeButton.setBounds (kLeft, 772, 150, 46);
-    seedButton.setBounds (kLeft + 162, 772, 120, 46);
-    seedLockButton.setBounds (kLeft + 294, 772, 172, 46);
-    qualityLabel.setBounds (556, 772, 116, 46);
+    freezeButton.setBounds (kLeft, 728, 150, 46);
+    seedButton.setBounds (kLeft + 162, 728, 120, 46);
+    seedLockButton.setBounds (kLeft + 294, 728, 172, 46);
+    qualityLabel.setBounds (556, 728, 116, 46);
     for (int i = 0; i < 5; ++i)
-        qualityChips[static_cast<size_t> (i)].setBounds (684 + i * 87, 774, 83, 42);
+        qualityChips[static_cast<size_t> (i)].setBounds (684 + i * 87, 730, 83, 42);
+
+    // Levels and presets.
+    smallKnobs[4]->setBounds (kLeft, 786, 134, 54);
+    inputMeter.setBounds (kLeft + 136, 803, 104, 20);
+    smallKnobs[5]->setBounds (kLeft + 252, 786, 134, 54);
+    outputMeter.setBounds (kLeft + 388, 803, 104, 20);
+    autoGainButton.setBounds (556, 794, 96, 38);
+    presetLabel.setVisible (false);
+    presetBar.setBounds (684, 792, 344, 42);
+    saveButton.setBounds (1036, 794, 80, 38);
 }
 
 } // namespace rain

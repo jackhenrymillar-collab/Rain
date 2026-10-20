@@ -35,11 +35,6 @@ public:
     static juce::String syncDensityText (float density, int rateIndex);
     static juce::String syncTimeText (float effectiveTime, float bufferSeconds, double bpm, int rateIndex);
 
-    // In delay mode DENSITY sets the delay time (beads/dsp/delay_controller.cc):
-    // longest at noon, shorter either side; when synced, a ratio of the clock.
-    static float delaySeconds (float density, float bufferSeconds, bool sync, double bpm, int rateIndex);
-    static juce::String delayText (float density, float bufferSeconds, bool sync, double bpm, int rateIndex);
-
 private:
     struct Grain
     {
