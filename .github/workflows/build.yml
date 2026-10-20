@@ -1,0 +1,83 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  macos:
+    name: macOS (VST3 + AU, universal)
+    runs-on: macos-14
+    timeout-minutes: 60
+    permissions:
+      contents: write # to publish the "latest" release from main
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: DSP tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Check universal binary
+        run: lipo -info "build/Rain_artefacts/Release/VST3/Rain.vst3/Contents/MacOS/Rain"
+
+      - name: Validate AU with auval
+        run: |
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx Ran1 Ovca
+
+      - name: Validate VST3 and AU with pluginval
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          PV=pluginval.app/Contents/MacOS/pluginval
+          $PV --strictness-level 10 --skip-gui-tests --validate-in-process "build/Rain_artefacts/Release/VST3/Rain.vst3"
+          $PV --strictness-level 10 --skip-gui-tests --validate-in-process "$HOME/Library/Audio/Plug-Ins/Components/Rain.component"
+
+      - name: Package VST3 and AU
+        run: |
+          mkdir -p dist
+          cp -R "build/Rain_artefacts/Release/VST3/Rain.vst3" dist/
+          cp -R "$HOME/Library/Audio/Plug-Ins/Components/Rain.component" dist/
+          # Ad-hoc sign the bundles so macOS will load them (not notarised).
+          codesign --force --deep --sign - dist/Rain.vst3
+          codesign --force --deep --sign - dist/Rain.component
+          cp docs/INSTALL.md dist/INSTALL.md
+          cd dist && ditto -c -k --sequesterRsrc . ../Rain-macOS.zip
+
+      - name: Upload plugin files
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rain-macOS
+          path: Rain-macOS.zip
+          retention-days: 30
+
+      - name: Publish "latest" release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest Rain-macOS.zip \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Rain (latest build from main)" \
+            --notes "Built from ${GITHUB_SHA::7}. Unzip, then follow INSTALL.md inside."
+
+  linux-tests:
+    name: Linux (DSP tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DRAIN_BUILD_PLUGIN=OFF -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j 4
+      - name: DSP tests
+        run: ctest --test-dir build --output-on-failure
