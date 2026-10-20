@@ -76,6 +76,7 @@ struct RainParams
     bool overlap = false;
     float reverse = 0.0f; // chance each grain plays backwards, 0 to 1
     float soften = 0.0f;  // rounds off the grains' highs and lows, 0 to 1
+    float smudge = 0.0f;  // 0 to 1: softens each grain's transients and edges
     float randomPan = 0.0f; // 0 to 1: each grain lands at a random place in the stereo field
     // Formant: pitched grains keep their tone colour (voices don't go chipmunk or
     // monster), by repeating pitch-period slices instead of resampling.

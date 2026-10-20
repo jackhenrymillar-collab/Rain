@@ -51,6 +51,7 @@ struct GrainOptions {
   bool formant = false;
   bool phase_align = false;
   float glide_coefficient = 0.0f;   // one-pole coefficient per sample, 0 = off
+  float smudge = 0.0f;              // 0 to 1, rounds the grain's attack
   const DelayGrain* previous = NULL;  // the grain started before this one
 };
 
@@ -229,7 +230,7 @@ class DelayGrain : public Grain {
       gain_[0][1] = gain_[1][1] = 0.0f;
     }
     
-    envelope_.Start(duration, shape, fractional_sample);
+    envelope_.Start(duration, shape, fractional_sample, options.smudge);
     remaining_samples_ = int(duration);
     
     voice_stealing_envelope_.ResetAndPause();

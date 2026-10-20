@@ -72,6 +72,9 @@ struct Parameters {
   bool formant = false;
   bool phase_align = false;
   float pitch_glide = 0.0f;
+  // Rain: 0 to 1, softens each grain's attack (see GrainEnvelope and
+  // Processor::Smudge).
+  float smudge = 0.0f;
 };
 
 template<typename T, int num_grains>

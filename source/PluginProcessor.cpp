@@ -35,6 +35,7 @@ RainProcessor::RainProcessor()
     overlap     = state.getRawParameterValue (ParamID::overlap);
     reverse     = state.getRawParameterValue (ParamID::reverse);
     soften      = state.getRawParameterValue (ParamID::soften);
+    smudge      = state.getRawParameterValue (ParamID::smudge);
     randomPan   = state.getRawParameterValue (ParamID::randomPan);
     formant     = state.getRawParameterValue (ParamID::formant);
     smoothRandom = state.getRawParameterValue (ParamID::smoothRandom);
@@ -118,6 +119,7 @@ dsp::RainParams RainProcessor::readParams() const noexcept
     p.overlap = overlap->load() > 0.5f;
     p.reverse = reverse->load() * 0.01f;
     p.soften = soften->load() * 0.01f;
+    p.smudge = smudge->load() * 0.01f;
     p.randomPan = randomPan->load() * 0.01f;
     p.formant = formant->load() > 0.5f;
     p.smoothRandom = smoothRandom->load() > 0.5f;

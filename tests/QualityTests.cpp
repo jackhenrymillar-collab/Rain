@@ -521,3 +521,55 @@ TEST_CASE ("Changing quality mid-sound doesn't click")
         CHECK (around < 1.5 * settled);
     }
 }
+
+TEST_CASE ("Smudge smooths choppy droplets without changing their level")
+{
+    // Short square droplets of a steady chord chop the level up; SMUDGE should
+    // smooth that out, keep the overall level within a couple of dB, and do
+    // nothing at all when it is at zero.
+    constexpr double fs = 48000.0;
+    std::vector<float> source (512 * 470);
+    for (std::size_t i = 0; i < source.size(); ++i)
+        source[i] = float (0.15 * std::sin (2 * kPi * 220 * double (i) / fs) + 0.1 * std::sin (2 * kPi * 331 * double (i) / fs));
+
+    struct Result { double level, chop; };
+    auto measure = [&] (float smudge)
+    {
+        std::srand (1);
+        RainEngine e;
+        RainParams p;
+        p.quality = Quality::digital;
+        p.time = 0.3f; p.size = 0.45f; p.shape = 0.0f; p.density = 0.3f;
+        p.smudge = smudge;
+        p.dryWet = 1.0f; p.reverb = 0.0f; p.feedback = 0.0f; p.soften = 0.0f;
+        e.setParams (p);
+        e.prepare (fs, 512);
+        auto l = source, r = source;
+        run (e, l, r, 512);
+        std::vector<double> env; // 1 ms RMS over the last three seconds
+        for (std::size_t i = l.size() - std::size_t (3 * fs); i + 48 <= l.size(); i += 48)
+        {
+            double s = 0;
+            for (std::size_t n = 0; n < 48; ++n)
+                s += 0.5 * (l[i + n] * l[i + n] + r[i + n] * r[i + n]);
+            env.push_back (std::sqrt (s / 48));
+        }
+        double mean = 0, power = 0, wobble = 0;
+        for (double x : env) { mean += x; power += x * x; }
+        mean /= double (env.size());
+        constexpr int W = 12; // against a 25 ms moving average
+        for (std::size_t k = W; k + W < env.size(); ++k)
+        {
+            double a = 0;
+            for (int j = -W; j <= W; ++j)
+                a += env[k + std::size_t (j)];
+            a /= 2 * W + 1;
+            wobble += (env[k] - a) * (env[k] - a);
+        }
+        return Result { 10 * std::log10 (power / double (env.size())), std::sqrt (wobble / double (env.size() - 2 * W)) / mean };
+    };
+
+    const auto off = measure (0.0f), on = measure (0.8f);
+    CHECK (on.chop < 0.6 * off.chop);
+    CHECK (std::abs (on.level - off.level) < 2.5);
+}

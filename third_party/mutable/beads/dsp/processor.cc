@@ -122,6 +122,10 @@ void Processor::Configure(Media media, bool mono) {
     reverb_studio_.set_dry_level(reverb_dry);
   }
   std::fill(&soften_state_[0][0], &soften_state_[0][0] + 8, 0.0f);
+  std::fill(&smudge_line_[0][0][0],
+            &smudge_line_[0][0][0] + 2 * kSmudgeStages * kSmudgeMaxLength, 0.0f);
+  smudge_amount_ = 0.0f;
+  smudge_g_ = 0.0f;
 }
 
 // Rain: carrying the recording across a change of quality.
@@ -210,6 +214,63 @@ void Processor::Soften(float amount, FloatFrame* out, size_t size) {
       }
       *channel[c] = x;
     }
+  }
+}
+
+// Rain: SMUDGE. Four all-pass stages per channel (about 3 to 14 ms, different
+// on each side) spread every sharp edge in the grains over a few tens of
+// milliseconds without changing their level or tone, the way a plate smears a
+// hit. Mixing them is linear, so smudging the grains together is the same as
+// smudging each grain on its own. The grains' attacks are rounded too (see
+// GrainEnvelope).
+void Processor::Smudge(float amount, FloatFrame* out, size_t size) {
+  if (amount <= 0.0f && smudge_amount_ <= 0.0f) {
+    smudge_g_ = 0.0f;
+    return;
+  }
+  static const int kLengths[2][kSmudgeStages] = {
+    { 142, 263, 409, 661 }, { 157, 241, 433, 617 } };
+  const float scale = sample_rate() / 48000.0f;
+  int length[2][kSmudgeStages];
+  for (int c = 0; c < 2; ++c) {
+    for (int s = 0; s < kSmudgeStages; ++s) {
+      length[c][s] = std::max(1, std::min(
+          int(kLengths[c][s] * scale), int(kSmudgeMaxLength) - 1));
+    }
+  }
+  // The all-pass strength follows SMUDGE, so the level and tone never change;
+  // only switching it on or off crossfades with the untouched grains.
+  const float target_g = 0.6f * amount;
+  const float g_step = (target_g - smudge_g_) / float(size);
+  const float on = amount > 0.0f ? 1.0f : 0.0f;
+  const float fade = 1.0f / (0.02f * sample_rate());
+  for (size_t i = 0; i < size; ++i) {
+    smudge_g_ += g_step;
+    const float g = smudge_g_;
+    smudge_amount_ += std::max(-fade, std::min(fade, on - smudge_amount_));
+    const float mix = smudge_amount_;
+    float* channel[2] = { &out[i].l, &out[i].r };
+    for (int c = 0; c < 2; ++c) {
+      const float dry = *channel[c];
+      float x = dry;
+      for (int s = 0; s < kSmudgeStages; ++s) {
+        float* line = smudge_line_[c][s];
+        int read = smudge_cursor_ - length[c][s];
+        if (read < 0) read += kSmudgeMaxLength;
+        const float delayed = line[read];
+        const float v = x + g * delayed;
+        line[smudge_cursor_] = v;
+        x = delayed - g * v;
+      }
+      *channel[c] = dry + mix * (x - dry);
+    }
+    smudge_cursor_ = (smudge_cursor_ + 1) & (kSmudgeMaxLength - 1);
+  }
+  smudge_g_ = target_g;
+  if (smudge_amount_ <= 0.0f) {
+    std::fill(&smudge_line_[0][0][0],
+              &smudge_line_[0][0][0] + 2 * kSmudgeStages * kSmudgeMaxLength,
+              0.0f);
   }
 }
 
@@ -322,6 +383,7 @@ void Processor::Process(
       break;
   }
   
+  Smudge(parameters.smudge, out, size);
   Soften(mix_parameters.soften, out, size);
 
   // Fade-out / Fade-in the dry signal when switching between granular and

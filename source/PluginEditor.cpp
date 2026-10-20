@@ -100,6 +100,7 @@ RainEditor::RainEditor (RainProcessor& p)
     // Grain character: how each grain sounds and where it sits.
     const std::tuple<const char*, const char*, const char*> character[] = {
         { ParamID::reverse, "REVERSE", "Chance each droplet plays backwards" },
+        { ParamID::smudge, "SMUDGE", "Smudges the attack of every droplet: hits and plucks inside it bloom rather than click, and droplets swell in and out instead of chopping" },
         { ParamID::soften, "SOFTEN", "Rounds off the highs and lows of the droplets, leaving the dry signal alone" },
         { ParamID::randomPan, "RANDOM PAN", "Places each droplet at a random point in the stereo field" },
     };
@@ -382,7 +383,7 @@ void RainEditor::layoutContent()
 
     // Grain character.
     for (size_t i = 0; i < characterKnobs.size(); ++i)
-        characterKnobs[i]->setBounds (46 + static_cast<int> (i) * 96, 572, 96, 116);
+        characterKnobs[i]->setBounds (42 + static_cast<int> (i) * 74, 572, 74, 116);
 
     // Tempo and scale. (The tempo and scale states show as tooltips; there's no
     // room for the readouts beside them.)

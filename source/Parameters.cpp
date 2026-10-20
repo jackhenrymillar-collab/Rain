@@ -118,6 +118,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::smoothRandom, v }, "Smooth Random", false));
     percent (ParamID::reverse, "Reverse", 0.0f);
     percent (ParamID::soften, "Soften", 25.0f);
+    percent (ParamID::smudge, "Smudge", 0.0f);
     percent (ParamID::randomPan, "Random Pan", 0.0f);
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::bypass, v }, "Bypass", false));
 

@@ -508,7 +508,8 @@ void RainEngine::runBeadsBlock()
                                   { &q.density, &smoothed.density }, { &q.pitchSemis, &smoothed.pitchSemis },
                                   { &q.timeRandom, &smoothed.timeRandom }, { &q.sizeRandom, &smoothed.sizeRandom },
                                   { &q.shapeRandom, &smoothed.shapeRandom }, { &q.pitchRandom, &smoothed.pitchRandom },
-                                  { &q.reverse, &smoothed.reverse }, { &q.randomPan, &smoothed.randomPan } })
+                                  { &q.reverse, &smoothed.reverse }, { &q.randomPan, &smoothed.randomPan },
+                                  { &q.smudge, &smoothed.smudge } })
     {
         *state += kKnobSmoothing * (*target - *state);
         *target = *state;
@@ -568,6 +569,7 @@ void RainEngine::runBeadsBlock()
     p.monophonic_mode = false;
     p.reverse_probability = std::clamp (q.reverse, 0.0f, 1.0f);
     p.random_pan = std::clamp (q.randomPan, 0.0f, 1.0f);
+    p.smudge = std::clamp (q.smudge, 0.0f, 1.0f);
 
     // Grain quality: Digital and Studio read grains with a band-limited interpolator,
     // line new grains up in phase with the one before, and glide briefly between

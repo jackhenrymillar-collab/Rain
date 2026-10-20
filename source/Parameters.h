@@ -39,6 +39,7 @@ namespace ParamID
     inline constexpr auto overlap     = "overlap";
     inline constexpr auto reverse     = "reverse";
     inline constexpr auto soften      = "soften";
+    inline constexpr auto smudge      = "smudge";
     inline constexpr auto randomPan   = "randompan";
     inline constexpr auto formant     = "formant";
     inline constexpr auto smoothRandom = "smoothRandom";
