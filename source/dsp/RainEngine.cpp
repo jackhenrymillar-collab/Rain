@@ -36,6 +36,12 @@ namespace
     // Headroom inside Beads (see RainEngine.h).
     constexpr float kHeadroom = 0.5f;
 
+    // Beads turns the dry signal down to 0.75 (and boosts grains by 1.5) to leave
+    // headroom for busy clouds. The output makes that up, so OUTPUT at 0 dB passes
+    // 100% dry at unity.
+    constexpr float kDryMakeup = 1.0f / 0.75f;
+    float outputLevel (float db) { return kDryMakeup * std::pow (10.0f, db / 20.0f); }
+
     constexpr float kBeadsRates[] = { 24000.0f, 32000.0f, 48000.0f };
 
     int rateIndex (float rate)
@@ -189,7 +195,7 @@ void RainEngine::prepare (double sampleRate, int /*maxBlockSize*/)
     bypassStep = static_cast<float> (1.0 / (0.02 * fs));
     bypassMix = params.bypass ? 1.0f : 0.0f;
     outputGain.prepare (fs, 20.0f);
-    outputGain.snapTo (std::pow (10.0f, params.outputGainDb / 20.0f));
+    outputGain.snapTo (outputLevel (params.outputGainDb));
     prepared = true;
     lastDryGain = 0.0f;
     qualityPending = false;
@@ -414,7 +420,7 @@ bool RainEngine::advanceSwitch (long long budget)
 void RainEngine::setParams (const RainParams& p)
 {
     params = p;
-    outputGain.setTarget (std::pow (10.0f, p.outputGainDb / 20.0f));
+    outputGain.setTarget (outputLevel (p.outputGainDb));
     // A new quality takes effect once the grains have faded out (see process()), so
     // the switch is a quick dip rather than a click.
     qualityPending = prepared && p.quality != configured;

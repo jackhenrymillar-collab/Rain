@@ -44,6 +44,14 @@ public:
     void readFromState (const juce::ValueTree& restored);
 
     static bool affectsPreset (const juce::String& paramID);
+    // OUTPUT used to need +2.5 dB for unity; it is 0 dB now. Takes 2.5 dB off an
+    // OUTPUT value saved by an older version, so it sounds the same.
+    static float migratedOutputGain (float oldDb) noexcept { return juce::jmax (-24.0f, oldDb - 2.5f); }
+    static void migrateOutputGain (juce::ValueTree param, const juce::Identifier& property)
+    {
+        if (param.isValid() && param.hasProperty (property))
+            param.setProperty (property, migratedOutputGain (static_cast<float> (param.getProperty (property))), nullptr);
+    }
 
 private:
     void parameterChanged (const juce::String& paramID, float newValue) override;

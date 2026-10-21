@@ -49,6 +49,9 @@ The files are unchanged from upstream, except that:
     the dry signal doesn't dip when quality changes.
   - `granular_player.h` (`new_grain`) starts a new grain on a voice that has
     finished, when there is one, rather than cutting off a voice still fading out.
+  - `granular_player.h` (`typical_count`, `WarmStart`), `granular_processor.h` and
+    `Processor::Configure`: after a change of quality the new player levels its first
+    grains as if as many were playing as before, instead of at full level.
 
 ## License
 

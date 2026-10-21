@@ -86,6 +86,14 @@ class GranularProcessor {
     multitap_delay_.Reset();
   }
   
+  // Rain: see GranularPlayer::typical_count and WarmStart.
+  inline float typical_grain_count() const {
+    return granular_player_.typical_count();
+  }
+  inline void WarmStart(float grain_count) {
+    granular_player_.WarmStart(grain_count);
+  }
+
   inline int max_delay_times_ratio() const {
     return max_delay * ratio;
   }

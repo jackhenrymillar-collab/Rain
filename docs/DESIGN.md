@@ -154,7 +154,7 @@ it too; only the reverb tail is cleared.
 | --- | --- | --- |
 | **Auto Gain** | on/off | Beads' automatic input level (off by default so the dry signal stays put in a mix). |
 | **Input Gain** | 0 to +32 dB | Beads' manual input gain, 1× to 40×, along the module's curve (knob position to the fourth power), so most of the travel is fine control near unity. |
-| **Output Gain** | −24 to +12 dB | Default +2.5 dB, which makes up Beads' 0.75 dry gain so 0% wet with no reverb is unity. |
+| **Output Gain** | −24 to +12 dB | Default 0 dB, which is unity at 0% wet with no reverb: Rain makes up Beads' 0.75 dry gain inside. Sessions and user presets saved before this change have 2.5 dB taken off when they load, so they sound the same. |
 
 ## Not ported (yet)
 

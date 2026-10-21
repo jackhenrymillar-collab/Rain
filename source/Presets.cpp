@@ -201,7 +201,7 @@ bool PresetManager::saveUser (const String& rawName)
 
     XmlElement xml ("RainPreset");
     xml.setAttribute ("name", name);
-    xml.setAttribute ("version", 1);
+    xml.setAttribute ("version", 2); // 2: OUTPUT 0 dB is unity
     for (auto* p : state.processor.getParameters())
         if (auto* ranged = dynamic_cast<RangedAudioParameter*> (p))
             if (affectsPreset (ranged->paramID))
@@ -226,6 +226,8 @@ bool PresetManager::loadUser (const String& name)
     StringPairArray values;
     for (auto* e : xml->getChildWithTagNameIterator ("Param"))
         values.set (e->getStringAttribute ("id"), e->getStringAttribute ("value"));
+    if (xml->getIntAttribute ("version", 1) < 2 && values.containsKey (ParamID::outputGain))
+        values.set (ParamID::outputGain, String (migratedOutputGain (values[ParamID::outputGain].getFloatValue())));
     applyValues (values);
     setCurrent (name, true);
     return true;
