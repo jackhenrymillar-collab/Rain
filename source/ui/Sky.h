@@ -45,9 +45,17 @@ public:
 
 private:
     void renderStatic();
-    void drawStars (juce::Graphics&, float sx, float sy);
-    void drawAurora (juce::Graphics&, float sx, float sy, float amount);
-    void drawMoon (juce::Graphics&, float sx, float sy);
+    // The slow-changing layers (sky, mist, night, nebulae, star glows), cached at the
+    // screen's pixel size and redrawn only when CLOUD, TIME, FEEDBACK or DENSITY move.
+    // Returns true when it redrew.
+    bool updateBase (int pixelWidth, int pixelHeight);
+    // The moon and its glow, cached likewise and redrawn only when its look changes.
+    void updateMoonSprite (float pixelScale);
+    void drawStarGlows (juce::Graphics&);
+    void drawStars (juce::Graphics&);
+    void drawAurora (juce::Graphics&, float amount);
+    void drawMoon (juce::Graphics&, juce::Point<float> centre);
+    float moonReach() const noexcept;
     // Turns a design-space point with the sky, about a pole far below the panel.
     juce::Point<float> turned (juce::Point<float> p) const noexcept;
     juce::AffineTransform turning() const noexcept;
@@ -58,9 +66,12 @@ private:
     struct Bolt
     {
         juce::Rectangle<float> bounds;    // design coordinates
+        std::vector<Branch> branches;
         juce::Image glow, core;           // afterglow and bright channel, rendered once
+        float scale = 0.0f;               // screen pixels per design unit they were rendered at
         float age = 0.0f, flicker = -1.0f;
     };
+    void renderBolt (Bolt&, float pixelScale);
 
     void addBranch (std::vector<Branch>&, juce::Point<float> from, juce::Point<float> to,
                     float spread, int depth, float width, int& budget);
@@ -68,6 +79,13 @@ private:
     // sky: gradient. mist: low mist, cleared by night. night: darkening and nebulae.
     // decor: panels, wordmark and headings, always on top.
     juce::Image sky, mist, nightSky, decor, starGlow, aurora;
+    // Cached layers (see updateBase and updateMoonSprite), the values and the frame
+    // they were drawn for.
+    juce::Image baseLayer, skyLayer, moonSprite;   // skyLayer: the base with the aurora on top
+    std::array<float, 4> baseKey { -1.0f, -1.0f, -1.0f, -1.0f };
+    std::array<float, 4> moonKey { -1.0f, -1.0f, -1.0f, -1.0f };
+    float moonSpriteReach = 0.0f;
+    int frame = 0, baseFrame = -10, moonFrame = -10, auroraFrame = -1;
     std::array<Streak, 260> streaks {};
     std::array<Star, 900> stars {};
     std::vector<Bolt> bolts;

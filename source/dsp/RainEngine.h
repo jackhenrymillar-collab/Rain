@@ -59,7 +59,7 @@ struct RainParams
     Quality quality = Quality::digital;
     bool autoGain = false;     // Beads' automatic input level
     float inputGainDb = 0.0f;  // 0 to 32 dB when autoGain is off
-    float outputGainDb = 2.5f; // makes up Beads' 0.75 dry gain, so 0% wet is unity
+    float outputGainDb = 0.0f; // 0 dB: 100% dry is unity (Beads' 0.75 dry gain is made up inside)
 
     // Tempo sync: a clock from the host's tempo is patched into Beads' SEED input,
     // so DENSITY divides it (left of noon) or picks pulses at random (right of noon),

@@ -108,7 +108,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
             [] (float, float, float db) { return std::pow (std::max (0.0f, (std::pow (10.0f, db / 20.0f) - 1.0f) / 39.0f), 0.25f); });
         layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::inputGain, v }, "Input Gain", gainRange, 0.0f, withLabel ("dB", 1)));
     }
-    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::outputGain, v }, "Output Gain", Range { -24.0f, 12.0f, 0.1f }, 2.5f, withLabel ("dB", 1)));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { ParamID::outputGain, v }, "Output Gain", Range { -24.0f, 12.0f, 0.1f }, 0.0f, withLabel ("dB", 1)));
 
     layout.add (std::make_unique<AudioParameterBool> (ParameterID { ParamID::sync, v }, "Tempo Sync", false));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamID::syncRate, v }, "Sync Rate", syncRateNames(), 2));

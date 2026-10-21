@@ -121,12 +121,12 @@ TEST_CASE ("The dry signal passes untouched, in every quality and at any rate")
             const auto in = l;
             run (e, l, r);
 
-            // At 0% wet Beads gives the dry signal a gain of 0.75.
+            // At 0% wet and OUTPUT 0 dB the dry signal comes out at unity.
             const auto lag = static_cast<std::size_t> (e.latencySamples());
             double err = 0.0, ref = 0.0;
             for (std::size_t i = n / 2; i < n; ++i)
             {
-                const double expected = 0.75 * in[i - lag];
+                const double expected = in[i - lag];
                 err += (l[i] - expected) * (l[i] - expected);
                 ref += expected * expected;
             }
@@ -572,4 +572,46 @@ TEST_CASE ("Smudge smooths choppy droplets without changing their level")
     const auto off = measure (0.0f), on = measure (0.8f);
     CHECK (on.chop < 0.6 * off.chop);
     CHECK (std::abs (on.level - off.level) < 2.5);
+}
+
+TEST_CASE ("Changing quality doesn't bring frozen droplets back louder")
+{
+    // Dense frozen droplets with CLOUD up: after a change of quality the new player
+    // starts with no voices playing, and its first droplets used to come in at full
+    // level and pile up several dB louder than before, overdriving the reverb.
+    for (auto to : { Quality::studio, Quality::vintage })
+    {
+        RainEngine e;
+        RainParams p = grainsOnly();
+        p.quality = Quality::digital;
+        p.density = 0.95f;
+        p.reverb = 0.7f;
+        p.dryWet = 0.8f;
+        p.time = 0.1f;
+        p.size = 0.55f;
+        p.shape = 0.5f;
+        e.setParams (p);
+        e.prepare (48000.0, 256);
+
+        auto l = sine (48000 * 3, 48000.0, 220.0, 0.25f), r = l;
+        run (e, l, r);
+        p.freeze = true;
+        e.setParams (p);
+        std::vector<float> before (48000 * 2, 0.0f), br = before;
+        run (e, before, br);
+
+        p.quality = to;
+        e.setParams (p);
+        std::vector<float> after (48000 / 2, 0.0f), ar = after;
+        run (e, after, ar);
+
+        // Level over the last second before, and over the first 0.3 s once the new
+        // quality is playing (the changeover itself is a brief fade).
+        auto level = [] (const std::vector<float>& x, std::size_t from, std::size_t to) {
+            return 20.0 * std::log10 (rms (x, from, to) + 1e-9);
+        };
+        const double was = level (before, 48000, 96000), now = level (after, 4800, 4800 + 14400);
+        INFO ("to " << static_cast<int> (to) << ": before " << was << " dB, after " << now << " dB");
+        CHECK (now < was + 1.0);
+    }
 }

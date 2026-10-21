@@ -205,6 +205,9 @@ void RainProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (xml->hasTagName (state.state.getType()))
         {
             auto restored = juce::ValueTree::fromXml (*xml);
+            const int version = restored.getProperty ("stateVersion", 1);
+            if (version < 3)
+                PresetManager::migrateOutputGain (restored.getChildWithProperty ("id", ParamID::outputGain), "value");
 
             // Sessions from other versions: drop parameters Rain no longer has (such as
             // the old Grains/Delay mode), and give any it has gained their defaults

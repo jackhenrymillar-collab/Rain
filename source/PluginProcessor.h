@@ -49,7 +49,8 @@ public:
 
 private:
     // Written into saved sessions. 2: grains only (the mode parameter is gone).
-    static constexpr int kStateVersion = 2;
+    // 3: OUTPUT 0 dB is unity (it used to be +2.5 dB).
+    static constexpr int kStateVersion = 3;
     dsp::RainParams readParams() const noexcept;
     void processMonoOut (juce::AudioBuffer<float>&, int numSamples);
 

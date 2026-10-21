@@ -97,6 +97,9 @@ class GranularPlayer {
     max_grain_duration_ = sample_rate * 4.0f;
     sample_rate_ = sample_rate;
     one_hertz_ = 1.0f / sample_rate;
+    warm_decay_ = std::exp(-1.0f / (0.5f * sample_rate));
+    typical_count_ = 0.0f;
+    warm_count_ = 0.0f;
     Reset();
   }
   
@@ -144,7 +147,18 @@ class GranularPlayer {
       float* amplitude,
       float* pan) {
     const float num_active_grains = float(CountActiveGrains() + 1);
-    *amplitude = 1.0f / stmlib::Sqrt(num_active_grains);
+    // Rain: right after a reset (a change of quality) no voices are playing, so the
+    // first grains would each come in at full level and pile up far louder than the
+    // steady cloud. Until the voices fill up again, grains are levelled as if as
+    // many were playing as before the reset.
+    typical_count_ += 0.05f * (num_active_grains - typical_count_);
+    float level_count = num_active_grains;
+    if (warm_count_ > level_count) {
+      level_count = warm_count_;
+    } else {
+      warm_count_ = 0.0f;
+    }
+    *amplitude = 1.0f / stmlib::Sqrt(level_count);
 
     const float total_spread = ComputeSpread(trigger, p);
     const float pan_spread = 0.5f * num_active_grains * total_spread;
@@ -172,6 +186,16 @@ class GranularPlayer {
   
   inline void Tick() {
     ++grain_interval_;
+    warm_count_ *= warm_decay_;
+  }
+
+  // Rain: about how many grains have been playing at once lately.
+  inline float typical_count() const { return typical_count_; }
+  // Rain: level the next grains as if `count` were already playing (see
+  // ComputeGrainAmplitudeAndPan). The hint fades over about half a second.
+  inline void WarmStart(float count) {
+    warm_count_ = count;
+    typical_count_ = count;
   }
   
   inline void SortGrainList(bool monophonic_mode) {
@@ -256,6 +280,10 @@ class GranularPlayer {
   float one_hertz_;
   
   int grain_interval_;
+
+  float typical_count_ = 0.0f;
+  float warm_count_ = 0.0f;
+  float warm_decay_ = 1.0f;
   
   DISALLOW_COPY_AND_ASSIGN(GranularPlayer);
 };

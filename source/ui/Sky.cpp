@@ -59,7 +59,29 @@ namespace
         }
     }
 
-    float smooth (float amount, float targetValue, float k) { return amount + k * (targetValue - amount); }
+    // Eases towards the target, landing on it once close, so the cached layers settle.
+    float smooth (float amount, float targetValue, float k)
+    {
+        const float next = amount + k * (targetValue - amount);
+        return std::abs (targetValue - next) < 0.0005f ? targetValue : next;
+    }
+
+    // Where the decor layer (see renderStatic) has anything, in design units.
+    const RectangleList<int>& decorAreas()
+    {
+        static const RectangleList<int> areas = [] {
+            RectangleList<int> list;
+            for (const auto r : { Rectangle<int> (38, 562, 304, 134), Rectangle<int> (356, 562, 510, 134),
+                                  Rectangle<int> (880, 562, 252, 134),                                 // glass panels
+                                  Rectangle<int> (44, 24, 290, 70),                                    // wordmark
+                                  Rectangle<int> (62, 282, 310, 26), Rectangle<int> (602, 282, 310, 26), // headings
+                                  Rectangle<int> (52, 536, 290, 26), Rectangle<int> (370, 536, 310, 26),
+                                  Rectangle<int> (894, 536, 240, 26) })
+                list.add (r);
+            return list;
+        }();
+        return areas;
+    }
 }
 
 SkyBackground::SkyBackground() : random (19)
@@ -144,6 +166,7 @@ Rectangle<float> SkyBackground::currentMoonBounds() const noexcept
 void SkyBackground::advance (float seconds)
 {
     time += seconds;
+    ++frame;
     // Ease towards the knobs over about half a second, so the weather drifts.
     const float k = 1.0f - std::exp (-seconds / 0.5f);
     amount.rain = smooth (amount.rain, target.rain, k);
@@ -182,7 +205,7 @@ void SkyBackground::advance (float seconds)
     }
     for (auto& b : bolts)
         b.age += seconds;
-    bolts.erase (std::remove_if (bolts.begin(), bolts.end(), [] (const Bolt& b) { return b.age > 5.0f; }), bolts.end());
+    bolts.erase (std::remove_if (bolts.begin(), bolts.end(), [] (const Bolt& b) { return b.age > 2.5f; }), bolts.end());
     flash *= std::exp (-seconds / 0.12f);
 
     repaint();
@@ -224,7 +247,7 @@ void SkyBackground::addBranch (std::vector<Branch>& out, Point<float> from, Poin
         const float ang = dir + (random.nextBool() ? -1.0f : 1.0f) * (0.35f + random.nextFloat() * 0.75f);
         const float len = length * (0.22f + random.nextFloat() * 0.33f);
         addBranch (out, p, { p.x + std::sin (ang) * len, p.y + std::cos (ang) * len }, spread * 1.05f, depth - 1,
-                   std::max (0.35f, width * 0.48f), budget);
+                   std::max (0.3f, width * 0.48f), budget);
     }
 }
 
@@ -238,20 +261,29 @@ void SkyBackground::strikeLightning()
     std::vector<Branch> branches;
     int budget = 40 + roundToInt (amount.storm * 50.0f);
     addBranch (branches, { x, -10.0f }, { x + (random.nextFloat() - 0.5f) * kW * 0.18f, kH * (0.4f + random.nextFloat() * 0.25f) },
-               0.85f, 4, 3.0f, budget);
+               0.85f, 4, 1.8f, budget);
 
     Bolt bolt;
     bolt.flicker = random.nextBool() ? 0.09f + random.nextFloat() * 0.06f : -1.0f;
     for (const auto& b : branches)
         bolt.bounds = bolt.bounds.isEmpty() ? b.path.getBounds() : bolt.bounds.getUnion (b.path.getBounds());
     bolt.bounds = bolt.bounds.expanded (30.0f).getSmallestIntegerContainer().toFloat();
+    bolt.branches = std::move (branches);
+    bolts.push_back (std::move (bolt));
+    flash = std::min (1.0f, flash + 0.5f + 0.3f * amount.storm);
+}
 
-    // Render the bolt once: a wide afterglow layer, and the bright channel that only lasts a moment.
-    const float scale = 1.5f;
+void SkyBackground::renderBolt (Bolt& bolt, float pixelScale)
+{
+    // Render the bolt once, at the screen's pixel size: a wide afterglow layer, and the
+    // bright channel that only lasts a moment.
+    const float scale = pixelScale;
+    bolt.scale = pixelScale;
     const int iw = std::max (1, roundToInt (bolt.bounds.getWidth() * scale));
     const int ih = std::max (1, roundToInt (bolt.bounds.getHeight() * scale));
     bolt.glow = Image (Image::ARGB, iw, ih, true);
     bolt.core = Image (Image::ARGB, iw, ih, true);
+    const auto& branches = bolt.branches;
     const auto place = AffineTransform::translation (-bolt.bounds.getX(), -bolt.bounds.getY()).scaled (scale);
     const auto stroke = [] (float w) { return PathStrokeType (w, PathStrokeType::curved, PathStrokeType::rounded); };
     {
@@ -261,9 +293,9 @@ void SkyBackground::strikeLightning()
         {
             const float fine = std::min (1.0f, b.width / 2.0f);
             g.setColour (Colour (110, 100, 220).withAlpha (0.025f + 0.04f * fine));
-            g.strokePath (b.path, stroke (b.width * 14.0f + 6.0f));
+            g.strokePath (b.path, stroke (b.width * 9.0f + 4.0f));
             g.setColour (Colour (130, 120, 235).withAlpha (0.03f + 0.06f * fine));
-            g.strokePath (b.path, stroke (b.width * 7.0f + 3.0f));
+            g.strokePath (b.path, stroke (b.width * 4.5f + 2.0f));
             g.setColour (Colour (170, 170, 255).withAlpha (0.1f + 0.18f * fine));
             g.strokePath (b.path, stroke (b.width * 3.0f + 1.0f));
             g.setColour (Colour (240, 242, 255).withAlpha (0.14f));
@@ -281,8 +313,6 @@ void SkyBackground::strikeLightning()
             g.strokePath (b.path, stroke (b.width));
         }
     }
-    bolts.push_back (std::move (bolt));
-    flash = std::min (1.0f, flash + 0.5f + 0.3f * amount.storm);
 }
 
 void SkyBackground::renderStatic()
@@ -372,13 +402,45 @@ void SkyBackground::renderStatic()
     g.drawText ("TEMPO & SCALE", Rectangle<float> (898.0f, 540.0f, 230.0f, 18.0f), Justification::centredLeft, false);
 }
 
-void SkyBackground::drawStars (Graphics& g, float, float)
+namespace
 {
-    // DENSITY adds some stars and CLOUD many more. FEEDBACK makes them brighter, a touch
-    // larger, and gives them a soft glow.
+    // DENSITY adds some stars and CLOUD many more. (They are scattered a quarter wider
+    // than the panel, so a quarter more are drawn.)
+    size_t starCount (float rain, float night, size_t available)
+    {
+        return std::min (available, static_cast<size_t> (1.25f * (60.0f + rain * 200.0f + night * 420.0f)));
+    }
+}
+
+void SkyBackground::drawStarGlows (Graphics& g)
+{
+    // FEEDBACK gives the stars a soft glow. Glows are part of the cached base, so they
+    // hold steady while the stars themselves twinkle.
     const float storm = amount.storm;
-    // (Stars are scattered a quarter wider than the panel, so a quarter more are drawn.)
-    const auto count = std::min (stars.size(), static_cast<size_t> (1.25f * (60.0f + amount.rain * 200.0f + amount.night * 420.0f)));
+    const auto count = starCount (amount.rain, amount.night, stars.size());
+    const auto turn = turning();
+    for (size_t i = 0; i < count; ++i)
+    {
+        const auto& s = stars[i];
+        const float glow = std::min (1.0f, storm * 0.85f * (s.radius > 1.0f ? 1.0f : 0.5f));
+        if (glow <= 0.02f)
+            continue;
+        const auto p = Point<float> (s.x, s.y).transformedBy (turn);
+        if (p.x < -40.0f || p.x > kW + 40.0f || p.y < -40.0f || p.y > kH * 0.9f + 40.0f)
+            continue;
+        const float r = s.radius * (1.0f + 0.35f * storm);
+        const float glowSize = r * (11.0f + 6.0f * storm);
+        g.setOpacity (glow * 0.8f * std::min (1.0f, s.alpha * 1.5f));
+        g.drawImage (starGlow, Rectangle<float> (glowSize, glowSize).withCentre (p));
+    }
+    g.setOpacity (1.0f);
+}
+
+void SkyBackground::drawStars (Graphics& g)
+{
+    // FEEDBACK makes the stars brighter and a touch larger.
+    const float storm = amount.storm;
+    const auto count = starCount (amount.rain, amount.night, stars.size());
     const auto turn = turning();
     for (size_t i = 0; i < count; ++i)
     {
@@ -387,69 +449,73 @@ void SkyBackground::drawStars (Graphics& g, float, float)
         if (p.x < -10.0f || p.x > kW + 10.0f || p.y < -10.0f || p.y > kH * 0.9f)
             continue;
         const float tw = 0.75f + 0.25f * std::sin (time * s.speed + s.twinkle);
-        const float r = s.radius * (1.0f + 0.6f * storm);
-        const float glow = std::min (1.0f, storm * 1.4f * (s.radius > 1.0f ? 1.0f : 0.6f));
-        if (glow > 0.02f)
-        {
-            const float glowSize = r * (14.0f + 12.0f * storm);
-            g.setOpacity (glow * tw * std::min (1.0f, s.alpha * 1.5f));
-            g.drawImage (starGlow, Rectangle<float> (glowSize, glowSize).withCentre (p));
-            g.setOpacity (1.0f);
-        }
-        g.setColour (Colour (236, 240, 255).withAlpha (std::min (1.0f, s.alpha * tw * (1.0f + 1.5f * storm) + 0.25f * storm)));
+        const float r = s.radius * (1.0f + 0.35f * storm);
+        g.setColour (Colour (236, 240, 255).withAlpha (std::min (1.0f, s.alpha * tw * (1.0f + 0.8f * storm) + 0.12f * storm)));
         g.fillEllipse (Rectangle<float> (r * 2.0f, r * 2.0f).withCentre (p));
     }
 }
 
-void SkyBackground::drawAurora (Graphics& g, float, float, float strength)
+void SkyBackground::drawAurora (Graphics& g, float strength)
 {
     // Slow curtains of green and violet light along the bottom of the sky, computed into a
     // small image and drawn stretched, so they stay soft.
     const auto area = Rectangle<float> (0.0f, kH * 0.4f, kW, kH * 0.6f);
     const int aw = aurora.getWidth(), ah = aurora.getHeight();
-    Image::BitmapData px (aurora, Image::BitmapData::writeOnly);
-    const Colour violet (150, 90, 220), green (80, 230, 170), pale (140, 255, 200), teal (60, 190, 150);
-    for (int i = 0; i < aw; ++i)
     {
-        const float u = (static_cast<float> (i) + 0.5f) / static_cast<float> (aw);
-        const float base = kH * (0.9f + 0.035f * std::sin (u * 9.0f + time * 0.35f) + 0.02f * std::sin (u * 23.0f - time * 0.6f));
-        const float height = kH * (0.3f + 0.16f * (0.5f + 0.5f * std::sin (u * 5.3f - time * 0.22f)));
-        // Broad folds that drift slowly, with no fine striping, so the curtains stay soft.
-        const float folds = 0.5f + 0.5f * std::sin (u * 17.0f + time * 0.25f + std::sin (u * 4.0f + time * 0.12f) * 1.5f);
-        const float glow = (0.5f + 0.5f * folds) * (0.3f + 0.7f * (0.5f + 0.5f * std::sin (u * 3.1f - time * 0.17f)));
-        const float a = 2.4f * strength * glow;
-        const float tail = kH * 0.09f, top = base - height, f = height / (height + tail);
-        for (int j = 0; j < ah; ++j)
+        Image::BitmapData px (aurora, Image::BitmapData::writeOnly);
+        const Colour violet (150, 90, 220), green (80, 230, 170), pale (140, 255, 200), teal (60, 190, 150);
+        for (int i = 0; i < aw; ++i)
         {
-            const float y = area.getY() + (static_cast<float> (j) + 0.5f) / static_cast<float> (ah) * area.getHeight();
-            const float v = (y - top) / (height + tail);
-            Colour c = Colours::transparentBlack;
-            if (v > 0.0f && v < 1.0f)
+            const float u = (static_cast<float> (i) + 0.5f) / static_cast<float> (aw);
+            const float base = kH * (0.9f + 0.035f * std::sin (u * 9.0f + time * 0.35f) + 0.02f * std::sin (u * 23.0f - time * 0.6f));
+            const float height = kH * (0.3f + 0.16f * (0.5f + 0.5f * std::sin (u * 5.3f - time * 0.22f)));
+            // Broad folds that drift slowly, with no fine striping, so the curtains stay soft.
+            const float folds = 0.5f + 0.5f * std::sin (u * 17.0f + time * 0.25f + std::sin (u * 4.0f + time * 0.12f) * 1.5f);
+            const float glow = (0.5f + 0.5f * folds) * (0.3f + 0.7f * (0.5f + 0.5f * std::sin (u * 3.1f - time * 0.17f)));
+            const float a = 2.4f * strength * glow;
+            const float tail = kH * 0.09f, top = base - height, f = height / (height + tail);
+            for (int j = 0; j < ah; ++j)
             {
-                // Gradient stops: violet tops, green body, a pale lower edge, then a faint tail.
-                const auto mix = [] (Colour c0, float a0, Colour c1, float a1, float t) {
-                    return c0.interpolatedWith (c1, t).withAlpha (jlimit (0.0f, 1.0f, a0 + (a1 - a0) * t));
-                };
-                if (v < 0.35f * f)       c = mix (violet, 0.0f, violet, 0.1f * a, v / (0.35f * f));
-                else if (v < 0.75f * f)  c = mix (violet, 0.1f * a, green, 0.2f * a, (v - 0.35f * f) / (0.4f * f));
-                else if (v < f)          c = mix (green, 0.2f * a, pale, 0.26f * a, (v - 0.75f * f) / (0.25f * f));
-                else if (v < f + (1.0f - f) * 0.4f) c = mix (pale, 0.26f * a, teal, 0.08f * a, (v - f) / ((1.0f - f) * 0.4f));
-                else                     c = mix (teal, 0.08f * a, teal, 0.0f, (v - f - (1.0f - f) * 0.4f) / ((1.0f - f) * 0.6f));
+                const float y = area.getY() + (static_cast<float> (j) + 0.5f) / static_cast<float> (ah) * area.getHeight();
+                const float v = (y - top) / (height + tail);
+                Colour c = Colours::transparentBlack;
+                if (v > 0.0f && v < 1.0f)
+                {
+                    // Gradient stops: violet tops, green body, a pale lower edge, then a faint tail.
+                    const auto mix = [] (Colour c0, float a0, Colour c1, float a1, float t) {
+                        return c0.interpolatedWith (c1, t).withAlpha (jlimit (0.0f, 1.0f, a0 + (a1 - a0) * t));
+                    };
+                    if (v < 0.35f * f)       c = mix (violet, 0.0f, violet, 0.1f * a, v / (0.35f * f));
+                    else if (v < 0.75f * f)  c = mix (violet, 0.1f * a, green, 0.2f * a, (v - 0.35f * f) / (0.4f * f));
+                    else if (v < f)          c = mix (green, 0.2f * a, pale, 0.26f * a, (v - 0.75f * f) / (0.25f * f));
+                    else if (v < f + (1.0f - f) * 0.4f) c = mix (pale, 0.26f * a, teal, 0.08f * a, (v - f) / ((1.0f - f) * 0.4f));
+                    else                     c = mix (teal, 0.08f * a, teal, 0.0f, (v - f - (1.0f - f) * 0.4f) / ((1.0f - f) * 0.6f));
+                }
+                px.setPixelColour (i, j, c);
             }
-            px.setPixelColour (i, j, c);
         }
     }
     // drawImage uses the current fill's alpha, so reset it: otherwise the aurora takes the
     // opacity of whichever star was drawn last and flickers with its twinkle.
     g.setOpacity (1.0f);
-    g.setImageResamplingQuality (Graphics::highResamplingQuality);
+    // Bilinear is plenty for something this soft, and much cheaper to stretch.
+    g.setImageResamplingQuality (Graphics::mediumResamplingQuality);
     g.drawImage (aurora, area);
 }
 
-void SkyBackground::drawMoon (Graphics& g, float, float)
+float SkyBackground::moonReach() const noexcept
 {
-    const auto bounds = currentMoonBounds();
-    const auto c = bounds.getCentre();
+    // How far the moon's glow and halo ring reach from its centre, in design units.
+    const float r = moonBounds().getWidth() * 0.5f;
+    const float bloom = amount.bloom;
+    const float glowR = r * (1.6f + 2.6f * bloom * bloom);
+    const float ring = bloom > 0.55f ? r * 4.2f * 1.12f : 0.0f;
+    return std::max ({ glowR, ring, r }) + 2.0f;
+}
+
+void SkyBackground::drawMoon (Graphics& g, Point<float> c)
+{
+    const auto bounds = moonBounds().withCentre (c);
     const float r = bounds.getWidth() * 0.5f;
     const float e = eclipseAmount, night = amount.night;
 
@@ -515,23 +581,30 @@ void SkyBackground::drawMoon (Graphics& g, float, float)
     craters (g, c, r, Colour (170, 155, 110).withAlpha (0.3f), Colour (255, 250, 230).withAlpha (0.35f), 1.4f * kPi, 2.4f * kPi);
     g.restoreState();
 
-    // The rain cloud by the moon thins away as CLOUD rises.
-    const float wisp = (1.0f - 0.5f * e) * (1.0f - night);
-    if (wisp > 0.005f)
-    {
-        softEllipse (g, { 950.0f, 78.0f, 210.0f, 64.0f }, Colour (100, 108, 165).withAlpha (0.8f * wisp));
-        softEllipse (g, { 1010.0f, 92.0f, 170.0f, 54.0f }, Colour (80, 88, 150).withAlpha (0.9f * wisp));
-    }
 }
 
-void SkyBackground::paint (Graphics& g)
+bool SkyBackground::updateBase (int w, int h)
 {
-    const auto bounds = getLocalBounds().toFloat();
-    const float sx = bounds.getWidth() / kW;
-    const float sy = bounds.getHeight() / kH;
-    const auto design = Rectangle<float> (kW, kH);
-    g.addTransform (AffineTransform::scale (sx, sy));
+    // Redraw when the look has moved on, but no more than every other frame while a
+    // knob or modulator keeps it moving.
+    const std::array<float, 4> key { amount.night, amount.time, amount.storm, amount.rain };
+    const std::array<float, 4> tolerance { 0.002f, 0.001f, 0.003f, 0.003f };
+    w = std::max (1, w);
+    h = std::max (1, h);
+    const bool resized = baseLayer.getWidth() != w || baseLayer.getHeight() != h;
+    bool changed = resized;
+    for (size_t i = 0; i < key.size(); ++i)
+        changed = changed || std::abs (key[i] - baseKey[i]) > tolerance[i];
+    if (! changed || (frame - baseFrame < 2 && ! resized))
+        return false;
+    baseKey = key;
+    baseFrame = frame;
 
+    if (resized)
+        baseLayer = Image (Image::RGB, w, h, false);
+    Graphics g (baseLayer);
+    g.addTransform (AffineTransform::scale (static_cast<float> (w) / kW, static_cast<float> (h) / kH));
+    const auto design = Rectangle<float> (kW, kH);
     const float night = amount.night;
     g.drawImage (sky, design);
     if (night < 0.995f)
@@ -550,11 +623,68 @@ void SkyBackground::paint (Graphics& g)
         g.drawImageTransformed (nightSky, AffineTransform::translation (-kW * kNebulaX, -kH * kNebulaTop).followedBy (turning()));
         g.setOpacity (1.0f);
     }
+    drawStarGlows (g);
+    return true;
+}
 
-    drawStars (g, sx, sy);
+void SkyBackground::updateMoonSprite (float pixelScale)
+{
+    const float e = eclipseAmount;
+    const std::array<float, 4> key { amount.night, amount.bloom, e, pixelScale };
+    bool changed = moonSprite.isNull();
+    for (size_t i = 0; i < key.size(); ++i)
+        changed = changed || std::abs (key[i] - moonKey[i]) > (i == 3 ? 0.001f : 0.002f);
+    if (! changed || (frame - moonFrame < 2 && std::abs (pixelScale - moonKey[3]) < 0.001f))
+        return;
+    moonKey = key;
+    moonFrame = frame;
+
+    moonSpriteReach = moonReach();
+    const int size = std::max (1, roundToInt (2.0f * moonSpriteReach * pixelScale));
+    moonSprite = Image (Image::ARGB, size, size, true);
+    Graphics g (moonSprite);
+    g.addTransform (AffineTransform::scale (static_cast<float> (size) / (2.0f * moonSpriteReach)));
+    drawMoon (g, { moonSpriteReach, moonSpriteReach });
+}
+
+void SkyBackground::paint (Graphics& g)
+{
+    const auto bounds = getLocalBounds().toFloat();
+    const float sx = bounds.getWidth() / kW;
+    const float sy = bounds.getHeight() / kH;
+    const auto design = Rectangle<float> (kW, kH);
+    // The cached layers are drawn at exactly one image pixel per screen pixel, the
+    // cheapest way to draw an image.
+    const float display = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const float pixelScale = display * sx; // screen pixels per design unit
+    const float night = amount.night;
     const float auroraAmount = std::max (0.0f, (night - 0.2f) / 0.8f);
+    const bool rebuilt = updateBase (roundToInt (bounds.getWidth() * display), roundToInt (bounds.getHeight() * display));
     if (auroraAmount > 0.003f)
-        drawAurora (g, sx, sy, auroraAmount);
+    {
+        // The aurora's curtains drift slowly, so they are laid over a copy of the base
+        // ten times a second rather than stretched across the sky on every frame.
+        if (rebuilt || frame - auroraFrame >= 3 || skyLayer.getBounds() != baseLayer.getBounds())
+        {
+            auroraFrame = frame;
+            if (skyLayer.getBounds() != baseLayer.getBounds())
+                skyLayer = Image (Image::RGB, baseLayer.getWidth(), baseLayer.getHeight(), false);
+            Graphics sg (skyLayer);
+            sg.drawImageAt (baseLayer, 0, 0);
+            sg.addTransform (AffineTransform::scale (static_cast<float> (baseLayer.getWidth()) / kW,
+                                                     static_cast<float> (baseLayer.getHeight()) / kH));
+            drawAurora (sg, auroraAmount);
+        }
+        g.drawImageTransformed (skyLayer, AffineTransform::scale (1.0f / display));
+    }
+    else
+    {
+        g.drawImageTransformed (baseLayer, AffineTransform::scale (1.0f / display));
+    }
+
+    g.saveState();
+    g.addTransform (AffineTransform::scale (sx, sy));
+    drawStars (g);
 
     if (eclipseAmount > 0.0f)
     {
@@ -569,30 +699,63 @@ void SkyBackground::paint (Graphics& g)
         g.fillRect (design);
     }
 
-    drawMoon (g, sx, sy);
+    g.restoreState();
 
-    // Lightning: a bright channel for a moment, then an afterglow that fades over a few seconds.
-    for (const auto& b : bolts)
+    updateMoonSprite (pixelScale);
+    {
+        // Placed on whole screen pixels, so it is copied rather than resampled.
+        const auto centre = currentMoonBounds().getCentre();
+        const float left = std::round (centre.x * sx * display - 0.5f * static_cast<float> (moonSprite.getWidth()));
+        const float top = std::round (centre.y * sy * display - 0.5f * static_cast<float> (moonSprite.getHeight()));
+        g.drawImageTransformed (moonSprite, AffineTransform::translation (left, top).scaled (1.0f / display));
+    }
+
+    // Lightning: a bright channel for a moment, then an afterglow that fades within a second or so.
+    for (auto& b : bolts)
     {
         float core = std::exp (-b.age / 0.09f);
         if (b.flicker > 0.0f && b.age > b.flicker)
             core = std::max (core, 0.8f * std::exp (-(b.age - b.flicker) / 0.08f));
-        const float after = std::exp (-b.age / 1.3f) * (1.0f - std::exp (-b.age / 0.05f));
+        const float after = std::exp (-b.age / 0.55f) * (1.0f - std::exp (-b.age / 0.05f));
+        if (after <= 0.003f && core <= 0.003f)
+            continue;
+        if (std::abs (b.scale - pixelScale) > 0.001f)
+            renderBolt (b, pixelScale);
+        const auto place = AffineTransform::translation (std::round (b.bounds.getX() * sx * display),
+                                                         std::round (b.bounds.getY() * sy * display))
+                               .scaled (1.0f / display);
         if (after > 0.003f)
         {
             g.setOpacity (std::min (1.0f, after));
-            g.drawImage (b.glow, b.bounds);
+            g.drawImageTransformed (b.glow, place);
         }
         if (core > 0.003f)
         {
             g.setOpacity (std::min (1.0f, core));
-            g.drawImage (b.core, b.bounds);
+            g.drawImageTransformed (b.core, place);
         }
         g.setOpacity (1.0f);
     }
 
+    g.addTransform (AffineTransform::scale (sx, sy));
+
+    // The rain cloud by the moon thins away as CLOUD rises.
+    const float wisp = (1.0f - 0.5f * eclipseAmount) * (1.0f - night);
+    if (wisp > 0.005f)
+    {
+        softEllipse (g, { 950.0f, 78.0f, 210.0f, 64.0f }, Colour (100, 108, 165).withAlpha (0.8f * wisp));
+        softEllipse (g, { 1010.0f, 92.0f, 170.0f, 54.0f }, Colour (80, 88, 150).withAlpha (0.9f * wisp));
+    }
+
+
+    // Panels, wordmark and headings: drawn only where they are, not across the whole sky.
     g.setOpacity (1.0f);
-    g.drawImage (decor, design);
+    {
+        g.saveState();
+        g.reduceClipRegion (decorAreas());
+        g.drawImage (decor, design);
+        g.restoreState();
+    }
 
     // Falling rain, slanted: a drizzle with DENSITY at noon, a downpour at either end.
     // It fades a little as CLOUD rises.

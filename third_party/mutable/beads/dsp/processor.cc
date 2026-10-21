@@ -75,6 +75,15 @@ void Processor::Init(
   delay_mode_transition_ = -kDelayModeTransitionTime;
 }
 
+#define RAIN_FOR_MEDIA(expr_of_p) \
+  switch (media_) { \
+    case MEDIA_DIRTY_TAPE: { auto& p = processor_dirty_tape_; expr_of_p; } break; \
+    case MEDIA_CLEAN_TAPE: { auto& p = processor_clean_tape_; expr_of_p; } break; \
+    case MEDIA_VINTAGE_DIGITAL: { auto& p = processor_vintage_digital_; expr_of_p; } break; \
+    case MEDIA_STUDIO: { auto& p = processor_studio_; expr_of_p; } break; \
+    case MEDIA_DIGITAL: default: { auto& p = processor_digital_; expr_of_p; } break; \
+  }
+
 void Processor::Configure(Media media, bool mono) {
   if (media == MEDIA_STUDIO && !has_studio_) {
     media = MEDIA_DIGITAL;
@@ -82,6 +91,10 @@ void Processor::Configure(Media media, bool mono) {
   // Rain: the dry level passed by the reverb in use, handed on below.
   const float reverb_dry = media_ == MEDIA_STUDIO ? reverb_studio_.dry_level()
                                                    : reverb_.dry_level();
+  // Rain: and how many grains were playing at once, so the new player doesn't
+  // start louder than the old one was (see GranularPlayer::WarmStart).
+  float grain_count = 0.0f;
+  RAIN_FOR_MEDIA(grain_count = p.typical_grain_count());
   media_ = media;
   mono_ = mono;
   
@@ -110,6 +123,8 @@ void Processor::Configure(Media media, bool mono) {
       break;
   }
   
+  RAIN_FOR_MEDIA(p.WarmStart(grain_count));
+
   float sr = sample_rate();
   pre_reverb_limiter_.Init(1.0f / (sr * 4.0f), 0.9f);
   output_limiter_.Init(1.0f / (sr * 6.0f), 0.9f);
@@ -129,14 +144,6 @@ void Processor::Configure(Media media, bool mono) {
 }
 
 // Rain: carrying the recording across a change of quality.
-#define RAIN_FOR_MEDIA(expr_of_p) \
-  switch (media_) { \
-    case MEDIA_DIRTY_TAPE: { auto& p = processor_dirty_tape_; expr_of_p; } break; \
-    case MEDIA_CLEAN_TAPE: { auto& p = processor_clean_tape_; expr_of_p; } break; \
-    case MEDIA_VINTAGE_DIGITAL: { auto& p = processor_vintage_digital_; expr_of_p; } break; \
-    case MEDIA_STUDIO: { auto& p = processor_studio_; expr_of_p; } break; \
-    case MEDIA_DIGITAL: default: { auto& p = processor_digital_; expr_of_p; } break; \
-  }
 
 int Processor::history_capacity() const {
   int n = 0;
