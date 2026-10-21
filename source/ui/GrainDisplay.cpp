@@ -204,21 +204,31 @@ void GrainDisplay::paint (Graphics& g)
     {
         const int readings = jlimit (16, dsp::EngineMonitor::kNumLevels, roundToInt (buffer * dsp::EngineMonitor::kLevelRate));
         const int write = monitor.levelWrite.load (std::memory_order_acquire);
-        const int columns = roundToInt (plotW / 4.0f);
-        std::vector<float> amp (static_cast<size_t> (columns + 1), 0.0f);
-        for (int c = 0; c <= columns; ++c)
+        constexpr int N = dsp::EngineMonitor::kNumLevels;
+        // Readings are grouped into bins of a fixed power-of-two size, lined up with the
+        // recording itself rather than with the screen, so a bin keeps the same readings
+        // (and the same height) as it scrolls left. Grouping them by screen column instead
+        // made the outline wobble, as readings moved from one column to the next.
+        const float perColumn = static_cast<float> (readings) / (plotW / 4.0f);
+        int k = 1;
+        while (k * 2 <= N && static_cast<float> (k) * 1.41f < perColumn)
+            k *= 2;
+        const int newestEnd = write - (write % k); // bins end on multiples of k
+        std::vector<float> amp, age;               // newest first; age in readings, at the bin's centre
+        for (int end = newestEnd + k;; end -= k)
         {
-            // Column c covers readings from oldest (c = 0) to newest (c = columns).
-            const int from = (c * readings) / (columns + 1);
-            const int to = jmax (from + 1, ((c + 1) * readings) / (columns + 1));
+            const int start = end - k;
+            const float a = static_cast<float> (write - start) - 0.5f * static_cast<float> (k);
+            if (a > static_cast<float> (readings + 2 * k))
+                break;
             float peak = 0.0f;
-            for (int r = from; r < to; ++r)
-            {
-                const int idx = ((write - readings + r) % dsp::EngineMonitor::kNumLevels + dsp::EngineMonitor::kNumLevels) % dsp::EngineMonitor::kNumLevels;
-                peak = std::max (peak, monitor.levels[static_cast<size_t> (idx)].load (std::memory_order_relaxed));
-            }
-            amp[static_cast<size_t> (c)] = std::min (1.0f, std::sqrt (peak) * 1.1f);
+            for (int r = start; r < std::min (end, write); ++r)
+                peak = std::max (peak, monitor.levels[static_cast<size_t> (((r % N) + N) % N)].load (std::memory_order_relaxed));
+            amp.push_back (std::min (1.0f, std::sqrt (peak) * 1.1f));
+            age.push_back (std::max (0.0f, a));
         }
+        std::reverse (amp.begin(), amp.end());
+        std::reverse (age.begin(), age.end());
         // Light smoothing so the outline reads as a soft contour, not a bar chart.
         std::vector<float> smooth (amp.size());
         for (size_t c = 0; c < amp.size(); ++c)
@@ -227,7 +237,7 @@ void GrainDisplay::paint (Graphics& g)
             smooth[c] = 0.25f * a0 + 0.5f * amp[c] + 0.25f * a2;
         }
         const float half = (bottom - top) * 0.5f;
-        const auto xAt = [&] (size_t c) { return left + plotW * static_cast<float> (c) / static_cast<float> (columns); };
+        const auto xAt = [&] (size_t c) { return right - plotW * age[c] / static_cast<float> (readings); };
         Path upper, band;
         for (size_t c = 0; c < smooth.size(); ++c)
         {

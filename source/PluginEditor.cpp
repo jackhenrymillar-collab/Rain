@@ -87,6 +87,9 @@ RainEditor::RainEditor (RainProcessor& p)
         knobs.push_back (std::make_unique<ui::OrbKnob> (state, id, name, ui::OrbKnob::Size::large));
         content.addAndMakeVisible (*knobs.back());
     }
+    // DENSITY has two sides, regular droplets to the left of noon and random ones to the
+    // right, so its halo lights from the top like the centre-zero knobs.
+    knobs[4]->getSlider().getProperties().set ("bipolar", true);
     const std::pair<const char*, const char*> small[] = {
         { ParamID::timeRandom, "RANDOM" }, { ParamID::sizeRandom, "RANDOM" }, { ParamID::shapeRandom, "RANDOM" },
         { ParamID::pitchRandom, "RANDOM" }, { ParamID::inputGain, "INPUT" }, { ParamID::outputGain, "OUTPUT" },
