@@ -8,6 +8,11 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
+#include <cstdlib>
+#include <functional>
+#include <map>
+#include <typeinfo>
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -68,11 +73,57 @@ int main (int argc, char** argv)
     };
 
     feed (4.0);
+
+    // RAIN_BENCH=<pixel scale>: time drawing the whole panel each frame instead of
+    // saving PNGs, at that pixel scale (2 is a Retina screen), and the costliest parts.
+    if (const char* bench = std::getenv ("RAIN_BENCH"))
+    {
+        const float px = juce::String (bench).getFloatValue();
+        auto& ed = dynamic_cast<rain::RainEditor&> (*editor);
+        std::map<juce::String, double> total;
+        for (int f = 0; f < 120; ++f) // let the sky settle on the settings first
+        {
+            ed.tick();
+            ed.createComponentSnapshot ({ 0, 0, 8, 8 }, true, px);
+        }
+        for (int f = 0; f < frames; ++f)
+        {
+            feed (1.0 / 30.0);
+            ed.tick();
+            auto time = [&] (const juce::String& name, juce::Component& c) {
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                auto image = c.createComponentSnapshot (c.getLocalBounds(), true, px);
+                total[name] += juce::Time::getMillisecondCounterHiRes() - t0;
+            };
+            time ("whole panel", ed);
+            std::function<void (juce::Component&)> each = [&] (juce::Component& c) {
+                for (auto* child : c.getChildren())
+                {
+                    if (! child->isVisible())
+                        continue;
+                    juce::String name = typeid (*child).name();
+                    if (child->getWidth() * child->getHeight() > 20000)
+                        time (name + " " + child->getBounds().toString(), *child);
+                    each (*child);
+                }
+            };
+            if (std::getenv ("RAIN_BENCH_PARTS"))
+                each (ed);
+        }
+        for (const auto& [name, ms] : total)
+            std::printf ("%8.2f ms/frame  %s\n", ms / frames, name.toRawUTF8());
+        editor.reset();
+        plugin->releaseResources();
+        return 0;
+    }
+
     for (int f = 0; f < frames; ++f)
     {
         feed (1.0 / 30.0);
         dynamic_cast<rain::RainEditor&> (*editor).tick();
-        auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+        // RAIN_PIXELS=2 saves at twice the size, as a Retina screen would draw it.
+        const float pixels = std::getenv ("RAIN_PIXELS") != nullptr ? juce::String (std::getenv ("RAIN_PIXELS")).getFloatValue() : 1.0f;
+        auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, pixels);
         juce::PNGImageFormat png;
         auto file = outDir.getChildFile ("frame" + juce::String (f).paddedLeft ('0', 4) + ".png");
         file.deleteFile();
